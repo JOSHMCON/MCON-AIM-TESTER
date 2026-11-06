@@ -247,6 +247,9 @@
   body { font-family: var(--mono); background: #000; }
   .phone { background: #000; }
   body.bare { background: #000; }
+  body.bare .game .mbtn { left: max(30px, env(safe-area-inset-left)); top: 14px; }
+  body.bare .game .close { right: max(30px, env(safe-area-inset-right)); top: 14px; }
+  body.bare .game .expand { right: max(30px, env(safe-area-inset-right)); bottom: 14px; }
   .ver { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: #8E8E93; opacity: .55; margin-left: 8px; align-self: center; white-space: nowrap; }
   body.bare .phone { border-radius: 0; box-shadow: none; }
   button:focus-visible, input:focus-visible, textarea:focus-visible, .divider:focus-visible { outline: 2.5px solid var(--cyan); outline-offset: 2px; box-shadow: 0 0 14px rgba(51,195,255,.55); }
@@ -318,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v006 · Nov 6, 12:13 AM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v007 · Nov 6, 12:16 AM</span>
       </div>
 
       <div class="card sliders">
@@ -5612,13 +5615,14 @@ bool inVoid(vec3 p) {
       uiLightC.clearRect(0, 0, UI.W, UI.H); PX_GLOW = uiLightC;
       const W = UI.W, H = UI.H;
       if (!menuOpen) uiCross();
-      if (!tag.hidden && tag.textContent) pxText(c, tag.textContent, 6, H - 8, 1, 'mono', '#fff');
+      const bare = document.body.classList.contains('bare'), ix = bare ? Math.round(W * 0.035) : 0, iy = bare ? Math.round(H * 0.025) : 0;   // (on a phone: clear of the rounded screen corners)
+      if (!tag.hidden && tag.textContent) pxText(c, tag.textContent, 6 + ix, H - 8 - iy, 1, 'mono', '#fff');
       if (K.on) uiTrig();
       {   // where you are: X Y Z and which way you're facing (top left, beside the menu button)
         const P = K.on && K.S ? [K.S.p[0], K.S.p[1] - RC.cgH, K.S.p[2]] : B.on ? [B.x, B.y, B.z] : [s.px, s.py - EYE, s.pz];
         const yawD = Math.round(((K.on ? KC.yaw : s.yaw) * 180 / Math.PI % 360 + 360) % 360);
         const txt = `X ${P[0].toFixed(0)}  Y ${P[1].toFixed(0)}  Z ${P[2].toFixed(0)}  ${yawD}\u00b0`;
-        pxRR(c, 4, 40, pxMeasure(txt, 'mono') + 10, 11, 4, 'rgba(0,0,0,.6)'); pxText(c, txt, 9, 46, 1, 'mono', '#fff');
+        pxRR(c, 4 + ix, 40 + iy, pxMeasure(txt, 'mono') + 10, 11, 4, 'rgba(0,0,0,.6)'); pxText(c, txt, 9 + ix, 46 + iy, 1, 'mono', '#fff');
       }
       tuneSync();
       if (!hudEl.hidden && hudEl.textContent) uiPill(hudEl.textContent.replace(/\s{2,}/g, '  '), W / 2, 13, 'mono', '#fff');
