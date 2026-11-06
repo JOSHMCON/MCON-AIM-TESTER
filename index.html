@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v012 · Nov 6, 2:24 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v013 · Nov 6, 2:40 PM</span>
       </div>
 
       <div class="card sliders">
@@ -7518,14 +7518,29 @@ bool inVoid(vec3 p) {
           if (thr > 0.7 && E.lowT > 0 && Math.abs(st) > 0.4 && sp > RC.dhMinSpeed * 0.7 && down >= 2) { E.softA = 1; E.lowT = 0; }
           if ((E.softA || 0) > 0) { const keep = Math.abs(st) > 0.3 && thr > 0.4 && sp > RC.dhExitSpeed * 0.7; if (!keep) E.softA *= Math.exp(-dt / 0.18); if (E.softA < 0.02) E.softA = 0; }
         } else E.softA = 0;
+        // post-tunnel car: drifting, stick across to the other side, press B (or the brake): out of the drift, and the truck
+        // whips back round to straight (grip back, no brake slide). Press again with the stick still across: a drift the other way.
+        const post = (TUNE.counterBrakeEnd !== false && !TUNE.legacyCar), pressB = (!!inp.brakeB && !E.bPrev) || (brk > 0.3 && !E.lPrev); E.bPrev = !!inp.brakeB; E.lPrev = brk > 0.3;
+        E.strT = Math.max(0, (E.strT || 0) - dt); E.rePend = Math.max(0, (E.rePend || 0) - dt);
+        if (post && pressB) {
+          if (inDrift && st * D.side > 0.2) { D.on = false; D.pend = false; D.noEnter = true; E.strT = 1.2; E.rePend = 2.5; E.reSide = -D.side; E.bslide = 0; }
+          else if (!inDrift && E.rePend > 0 && st * E.reSide < -0.2 && sp > RC.dhExitSpeed) {   // second press, stick still across: drift the other way
+            const ns = E.reSide; D.on = true; D.age = 0; D.pend = false; D.thrSeen = thr > 0.3; D.liftT = 0; D.thrOff = thr < 0.1; D.side = ns; D.bt = clamp(0.55, RC.dhMin, RC.dhMax); D.lift = -RC.dhGrace; D.air = 0; D.psiV = psiV; D.noEnter = false;
+            E.strT = 0; E.rePend = 0; E.whip = ns; E.whipT = 0.5; }
+        }
+        if (post && E.strT > 0 && !D.on) {   // whip back to straight: the body turns to face where it's going
+          E.bslide = 0; if (Math.abs(beta) < 0.04) E.strT = 0;
+          S.w[1] += (-beta * 5 - S.w[1]) * Math.min(1, dt * 9);
+        }
+        if (post && (E.whipT || 0) > 0) { E.whipT -= dt; if (D.on && beta * E.whip < D.bt * 0.8) S.w[1] += (E.whip * 3.2 - S.w[1]) * Math.min(1, dt * 10); else E.whipT = 0; }   // swing the nose out into the new drift
         E.dhBrk = inDrift ? clamp(brkAll, 0, 1) : 0;
-        const bsNow = inDrift || (S.dh && S.dh.noEnter) ? 0 : RC.driftMix * (RC.bDrift ? bD : clamp(brkAll, 0, 1)) * clamp((Math.abs(st) - RC.dhSteerMin) / (1 - RC.dhSteerMin), 0, 1) * clamp((sp - 4) / 6, 0, 1);
+        const bsNow = inDrift || (S.dh && S.dh.noEnter) || (post && E.strT > 0) ? 0 : RC.driftMix * (RC.bDrift ? bD : clamp(brkAll, 0, 1)) * clamp((Math.abs(st) - RC.dhSteerMin) / (1 - RC.dhSteerMin), 0, 1) * clamp((sp - 4) / 6, 0, 1);
         E.bslide = Math.max((E.bslide || 0) * Math.exp(-dt / (RC.bDrift && inDrift ? 0.08 : RC.bslideFade)), bsNow);   // (B-drift: once it's caught, the rear grips again so the hold can steer it) E.bsNow = bsNow / Math.max(RC.driftMix, 1e-6) * Math.min(1, RC.driftMix * 4);
         if (!D.on) {
           if (RC.bDrift ? !bD : brkAll < 0.1) D.noEnter = false;
           const wants = RC.bDrift ? bD && Math.abs(st) > RC.dhSteerMin : (brkAll > 0.3 || (E.bslide || 0) > 0.15);   // B-drift: only while holding B and turning
           D.cool = Math.max(0, (D.cool || 0) - dt);
-          if (!D.noEnter && !(D.cool > 0 && !TUNE.legacyCar) && !((TUNE.counterBrakeEnd !== false && !TUNE.legacyCar) && st * Math.sign(beta) > 0.2) && RC.driftMix > 0 && sp > RC.dhMinSpeed && Math.abs(beta) > RC.dhEnter && Math.abs(beta) < 1.4 && wants && down >= 2) {   // only the brake starts drift mode
+          if (!D.noEnter && !(post && E.strT > 0) && RC.driftMix > 0 && sp > RC.dhMinSpeed && Math.abs(beta) > RC.dhEnter && Math.abs(beta) < 1.4 && wants && down >= 2) {   // only the brake starts drift mode
             D.on = true; D.age = 0; D.pend = false; D.thrSeen = thr > 0.3; D.liftT = 0; D.thrOff = thr < 0.1; D.side = Math.sign(beta); D.bt = clamp(Math.abs(beta), RC.dhMin, RC.dhMax); D.lift = -RC.dhGrace; D.air = 0; D.psiV = psiV;
           }
         } else if (RC.bDrift) {
@@ -7533,7 +7548,6 @@ bool inVoid(vec3 p) {
           // turn the other way, and press B again once the truck's swung round far enough.
           D.air = down < 2 ? D.air + dt : 0; D.pend = false;
           if (!bD || sp < RC.dhExitSpeed || RC.driftMix <= 0 || Math.abs(beta) > 1.9) D.on = false;
-          if ((TUNE.counterBrakeEnd !== false && !TUNE.legacyCar) && (brk > 0.3 || (bD && !D.bPrevB)) && st * D.side > 0.2) { D.on = false; D.cool = 0.8; }
         } else {
           if (thr < 0.1 && brkAll < 0.04) D.lift += dt; else D.lift = Math.min(D.lift, 0);   // (braking gives you a moment to get back on the throttle)
           // back on the throttle, off the brake, or landing from a jump with the stick centred: the drift's over
@@ -7548,7 +7562,6 @@ bool inVoid(vec3 p) {
           // holding the brake (no gas) long enough ends it
           { const hold = TUNE.brakeHoldEnd === undefined ? 1 : TUNE.brakeHoldEnd; if (false && hold > 0 && brkAll > 0.3) { D.brkHoldT = (D.brkHoldT || 0) + dt; if (D.brkHoldT > hold) quit = true; } else D.brkHoldT = 0; }
           // stick turned the other way (any amount past centre) and the brake or B pressed: out of the drift, gas or not
-          if ((TUNE.counterBrakeEnd !== false && !TUNE.legacyCar) && brkAll > 0.3 && st * D.side > 0.2) { quit = true; D.cool = 0.8; }
           if (quit) { D.on = false; D.pend = false; D.noEnter = brkAll > 0.1; }
           D.air = down < 2 ? D.air + dt : 0;
           if (D.lift > RC.dhLift || sp < RC.dhExitSpeed || RC.driftMix <= 0 || Math.abs(beta) > 1.9 || D.air > 2.5) D.on = false;   // (a long jump no longer cancels it: landing decides)
@@ -7564,7 +7577,7 @@ bool inVoid(vec3 p) {
               else D.on = false;
             }
           }
-          else if (brkAll > 0.3 && -st * D.side < -0.5) { D.pend = true; D.pT = beta; }
+          else if (!post && brkAll > 0.3 && -st * D.side < -0.5) { D.pend = true; D.pT = beta; }
         }
         D.bPrevB = bD;
         if (D.on && RC.driftMode === 1) {   // drift mode 1: go straight and you're out of it
