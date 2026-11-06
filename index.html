@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v007 · Nov 6, 12:16 AM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v008 · Nov 6, 12:22 AM</span>
       </div>
 
       <div class="card sliders">
@@ -4704,7 +4704,7 @@ bool inVoid(vec3 p) {
       postMat.uniforms.uPS1.value = sharp ? 0 : 1;
       for (const rt of [lowRT, gunRT]) rt.texture.magFilter = rt.texture.minFilter = sharp ? THREE.LinearFilter : THREE.NearestFilter;
       lowRT.setSize(lw, lh); gunRT.setSize(lw, lh);
-      const db = renderer.getDrawingBufferSize(new THREE.Vector2()), tk = Math.min(1, 900 / Math.max(1, db.y));
+      const db = renderer.getDrawingBufferSize(new THREE.Vector2()).multiplyScalar(Math.min(2.5, devicePixelRatio || 1) / Math.max(0.1, renderer.getPixelRatio())), tk = Math.min(1, 1200 / Math.max(1, db.y));   // signs and boards at the screen's real sharpness, even when the game drops its resolution to keep the frame rate up
       textRT.setSize(Math.max(2, Math.round(db.x * tk)), Math.max(2, Math.round(db.y * tk)));
       gunTextRT.setSize(Math.max(2, Math.round(db.x * tk)), Math.max(2, Math.round(db.y * tk)));
       postMat.uniforms.lowRes.value.set(lw, lh);
