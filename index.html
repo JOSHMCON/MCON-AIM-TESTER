@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v013 · Nov 6, 2:40 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v014 · Nov 6, 2:55 PM</span>
       </div>
 
       <div class="card sliders">
@@ -7373,9 +7373,9 @@ bool inVoid(vec3 p) {
     // live tuning from the in-truck sliders, applied on top of the values above
     const RC_BASE = { pitchDamp: RC.pitchDamp, rollDamp: RC.rollDamp, m: RC.m, I: RC.I.slice(), g: RC.g, cComp: RC.cComp, cReb: RC.cReb, cTyre: RC.cTyre, bodyC: RC.bodyC, cBump: RC.cBump, cCompHi: RC.cCompHi, rearSteer: RC.rearSteer, grip: RC.grip, steerMax: RC.steerMax, w0: RC.w0, Tstall: RC.Tstall, Tlim: RC.Tlim, spinLoss: RC.spinLoss, spinLossF: RC.spinLossF, gripF: RC.gripF, slideMax: RC.slideMax };
     const TUNE_KEY = 'mcon-truck-tune';
-    const TUNE_DEF = { airRev: true, airRevDelay: 0.8, legacyCar: true, legacyV2: true, brakeHoldEnd: 1, counterBrakeEnd: true, revMph: 20, headSmooth: 60, seatBack: 0, liftEnd: true, bakedRefl: true, winShards: true, winShardSize: 100, insideFov: 120, headStab: 60, headPitch: 0, headTrack: 100, headH: 0, priusCam: 60, driftPast: 35, straightDrift: true, hsStab: 100, landSlideOn: true, landSlide: 25, landSlideT: 0.8, glideDown: 15, rollGrip: 100, wheelieTurn: 170, driftAccel: 100, lowGripTrig: 30, surgeTurnFree: 0, surgeTurn: 0, airFall: 135, landCatch: 190, bBoostOn: true, bBoost: 24, bBoostBuild: 2.1, bBoostDur: 0.6, driftEase: 0, surgeTime: 0.3, driftMinAng: 12, dustCloud: 100, enginePitch: 160, speedOn: false, speedAll: 100, camDriftFov: 25, camDrift: 85, camDist: 100, camFollow: 100, driftFast: 150, lowGrip: 110, lowGripOn: false, tapOut: true, fadeOn: true, fadeT: 1, trigHud: false, driftMode: 2, elev: 100, elevOn: false, ail: 100, ailOn: false, surge: 32, surgeOn: true, softDrift: 15, softOn: true, driftTrac: 160, driftSpeed: 50, gearsOn: false, bDrift: false, driftBoost: 15, driftBoostOn: false, turboOn: false, airSpin: 190, turbo: 30, topSpin: 16, topSpinOn: true, spinCruise: true, planeOn: 100, planeOff: 50, bounce: 100, gravity: 100, weight: 100, wheelie: 110, rsOn: true, roost: 210, grip: 1.55, steer: 40, rpm: 100, punch: 300, slide: 100, slideOn: false, drift: 85, glide: 60, glideOn: true };   // your setup, baked in   // the user's own tuning (2026-11-05): the defaults every copy starts from
+    const TUNE_DEF = { driftForgive: 0.15, airRev: true, airRevDelay: 0.5, legacyCar: false, legacyV2: true, brakeHoldEnd: 1, counterBrakeEnd: true, revMph: 20, headSmooth: 60, seatBack: 0, liftEnd: true, bakedRefl: true, winShards: true, winShardSize: 100, insideFov: 120, headStab: 60, headPitch: 0, headTrack: 100, headH: 0, priusCam: 60, driftPast: 35, straightDrift: true, hsStab: 100, landSlideOn: true, landSlide: 60, landSlideT: 0.8, glideDown: 15, rollGrip: 100, wheelieTurn: 170, driftAccel: 100, lowGripTrig: 30, surgeTurnFree: 0, surgeTurn: 0, airFall: 135, landCatch: 190, bBoostOn: true, bBoost: 24, bBoostBuild: 2.1, bBoostDur: 0.6, driftEase: 0, surgeTime: 0.3, driftMinAng: 12, dustCloud: 100, enginePitch: 160, speedOn: false, speedAll: 100, camDriftFov: 25, camDrift: 85, camDist: 100, camFollow: 100, driftFast: 150, lowGrip: 110, lowGripOn: false, tapOut: true, fadeOn: true, fadeT: 1, trigHud: false, driftMode: 2, elev: 100, elevOn: false, ail: 100, ailOn: false, surge: 32, surgeOn: true, softDrift: 15, softOn: true, driftTrac: 160, driftSpeed: 50, gearsOn: false, bDrift: false, driftBoost: 15, driftBoostOn: false, turboOn: false, airSpin: 340, turbo: 30, topSpin: 16, topSpinOn: true, spinCruise: true, planeOn: 100, planeOff: 50, bounce: 100, gravity: 100, weight: 100, wheelie: 110, rsOn: true, roost: 210, grip: 1.55, steer: 40, rpm: 100, punch: 300, slide: 100, slideOn: false, drift: 85, glide: 60, glideOn: true };   // your setup, baked in   // the user's own tuning (2026-11-05): the defaults every copy starts from
     const TUNE = Object.assign({}, TUNE_DEF);
-    try { const o = JSON.parse(localStorage.getItem(TUNE_KEY) || '{}'); if (!('trigHud' in o)) { delete o.elevOn; delete o.ailOn; } Object.assign(TUNE, o); if (!o.legacyV2) { TUNE.legacyCar = true; TUNE.legacyV2 = true; } if (!o.bakedV2) { Object.assign(TUNE, TUNE_DEF); TUNE.bakedV1 = TUNE.bakedV2 = true; try { localStorage.setItem(TUNE_KEY, JSON.stringify(TUNE)); } catch (_) {} } } catch (_) {}
+    try { const o = JSON.parse(localStorage.getItem(TUNE_KEY) || '{}'); if (!('trigHud' in o)) { delete o.elevOn; delete o.ailOn; } Object.assign(TUNE, o); if (!o.legacyV2) { TUNE.legacyCar = true; TUNE.legacyV2 = true; } if (!o.bakedV3) { Object.assign(TUNE, TUNE_DEF); TUNE.bakedV1 = TUNE.bakedV2 = TUNE.bakedV3 = true; try { localStorage.setItem(TUNE_KEY, JSON.stringify(TUNE)); } catch (_) {} } } catch (_) {}
     function tuneApply() {
       RC.grip = RC_BASE.grip * TUNE.grip;
       // bounciness: less damping in the shocks and tyres = more bounce (100% = as tuned)
@@ -7463,7 +7463,14 @@ bool inVoid(vec3 p) {
     function rcStep(S, inp, dt, env) {
       S.events.length = 0;
       if (!(dt > 0)) return S;
-      const thr = clamp(inp.throttle || 0, 0, 1), brk = clamp(inp.brake || 0, 0, 1), st = clamp(inp.steer || 0, -1, 1);
+      const thr = clamp(inp.throttle || 0, 0, 1), brk = clamp(inp.brake || 0, 0, 1), stIn = clamp(inp.steer || 0, -1, 1);
+      // drift-entry forgiveness: the stick pushed hard to a side is remembered for a moment after you let it go, so the brake or B
+      // pressed a little late still starts the drift (and it carries the remembered steer for a quarter second)
+      const SM = S.stMem || (S.stMem = { v: 0, t: 0, ghost: 0, gv: 0, bPrev: false });
+      { const win = TUNE.driftForgive === undefined ? 0 : TUNE.driftForgive; SM.t = Math.max(0, SM.t - dt); SM.ghost = Math.max(0, SM.ghost - dt);
+        if (Math.abs(stIn) > 0.7) { SM.v = Math.sign(stIn); SM.t = win; }
+        const bNow = !!inp.brakeB || brk > 0.3; if (bNow && !SM.bPrev && Math.abs(stIn) < 0.35 && SM.t > 0 && !(S.dh && S.dh.on)) { SM.ghost = 0.25; SM.gv = SM.v; } SM.bPrev = bNow; if (!bNow) SM.ghost = 0; }
+      const st = SM.ghost > 0 ? SM.gv : stIn;
       // B: normally a second brake (never reverses). In B-drift mode it's the drift button instead and doesn't brake.
       const bD = RC.bDrift && inp.brakeB ? 1 : 0, bB = RC.bDrift ? 0 : inp.brakeB ? 1 : 0, brkAll = Math.max(brk, bB);
       {   // in the air: time aloft (for the landing catch), and wheels off the ground that you aren't driving or braking
@@ -8736,6 +8743,7 @@ bool inVoid(vec3 p) {
     // ---- in-truck tuning sliders (top-right, only while you're driving)
     let tuneEl = null, tuneOpen = false;
     const TUNE_ROWS = [
+      { k: 'driftForgive', label: 'Drift entry forgiveness (stick, then B late)', min: 0, max: 0.6, step: 0.05, fmt: v => v <= 0 ? 'Off' : (+v).toFixed(2) + ' s' },
       { k: 'airRevDelay', label: 'In the air: gas / brake flip the wheels after', min: 0, max: 3, step: 0.1, fmt: v => v.toFixed(1) + ' s', toggle: 'airRev' },
       { nw: 1, hide: 1, k: 'brakeHoldEnd', label: 'Hold brake (gas or not) = drift ends after', min: 0, max: 3, step: 0.1, fmt: v => v <= 0 ? 'Off' : v.toFixed(1) + ' s' },
       { nw: 1, label: 'Steer the other way + brake = drift ends', toggle: 'counterBrakeEnd' },
