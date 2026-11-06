@@ -206,7 +206,7 @@
   .game .menu .mfoot { font-size: 8.5px; color: #8E8E93; letter-spacing: .12em; text-transform: uppercase; white-space: normal; padding-top: 2px; }
   .game .tune { position: absolute; right: 10px; top: 46px; z-index: 30; width: 178px; padding: 8px 10px 9px; max-height: calc(100% - 100px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-radius: 14px; background: rgba(0,0,0,.82);
     display: flex; flex-direction: column; gap: 3px; color: #fff; font: 700 9px/1.2 'JetBrains Mono', ui-monospace, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase;
-    image-rendering: auto; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+    image-rendering: auto; pointer-events: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; user-select: none; -webkit-user-select: none; }
   .game .tune .th { display: flex; justify-content: space-between; align-items: center; color: #B4B4BA; font-size: 8.5px; letter-spacing: .14em; }
   .game .tune .th button { font: inherit; letter-spacing: .1em; color: #E8357F; background: none; border: 0; padding: 2px 0; cursor: pointer; }
   .game .tune .tl { display: flex; justify-content: space-between; align-items: baseline; margin-top: 3px; }
@@ -215,7 +215,7 @@
   .game .tune input[type=range]:disabled { opacity: .35; }
   .game .tune .act { font: inherit; letter-spacing: .12em; margin: 3px 0 2px; padding: 6px 0; border: 0; border-radius: 9px; background: #33C3FF; color: #00202E; cursor: pointer; }
   .game .tune .tl b { padding: 1px 5px; border-radius: 6px; background: #0E2633; font-weight: 800; letter-spacing: .04em; }
-  .game .tune input[type=range] { height: 18px; margin: 0; touch-action: none; }
+  .game .tune input[type=range] { height: 18px; margin: 0; touch-action: pan-y; }
   .game .tune input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: #B8B8BD; }
   .game .tune input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; margin-top: -5px; }
   .game .prompt { position: absolute; left: 50%; top: 82%; transform: translateX(-50%); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.82); border-radius: 999px; padding: 5px 14px; box-shadow: 0 0 0 2px rgba(166,255,58,.75); white-space: normal; text-align: center; max-width: 90%; width: max-content; pointer-events: none; z-index: 3; }
@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v011 · Nov 6, 2:11 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v012 · Nov 6, 2:24 PM</span>
       </div>
 
       <div class="card sliders">
@@ -5338,7 +5338,7 @@ bool inVoid(vec3 p) {
       if (K.on) it.push({ type: 'button', label: 'Reset truck  (X)', act: () => { closeMenu(); truckReset(); } });
       it.push({ type: 'choice', label: 'PRE-TUNNEL INTEGRATION CAR', primary: true, get: () => TUNE.legacyCar ? 'On' : 'Off', step: () => { TUNE.legacyCar = !TUNE.legacyCar; tuneSave(); showName(TUNE.legacyCar ? 'Pre-tunnel integration car' : 'Current car'); renderMenu(); } });
       for (const r of TUNE_ROWS) {
-        if (r.nw && TUNE.legacyCar) continue;
+        if (r.hide || (r.nw && TUNE.legacyCar)) continue;
         if (!r.k) { it.push({ type: 'choice', label: r.label, get: () => TUNE[r.toggle] ? 'On' : 'Off', step: () => { TUNE[r.toggle] = !TUNE[r.toggle]; tuneSave(); } }); continue; }
         it.push({ type: 'choice', label: r.label, get: () => r.toggle && !TUNE[r.toggle] ? 'Off' : r.fmt(TUNE[r.k]), step: d => {
           if (r.toggle && !TUNE[r.toggle]) { if (d > 0) TUNE[r.toggle] = true; tuneSave(); return; }
@@ -7546,7 +7546,7 @@ bool inVoid(vec3 p) {
           if (thr > 0.3) D.thrSeen = true;
           if (TUNE.liftEnd !== false && D.thrSeen && thr < 0.1) { D.liftT = (D.liftT || 0) + dt; if (D.liftT > 0.08) D.on = false; } else D.liftT = 0;
           // holding the brake (no gas) long enough ends it
-          { const hold = TUNE.brakeHoldEnd === undefined ? 1 : TUNE.brakeHoldEnd; if (hold > 0 && !TUNE.legacyCar && brkAll > 0.3) { D.brkHoldT = (D.brkHoldT || 0) + dt; if (D.brkHoldT > hold) quit = true; } else D.brkHoldT = 0; }
+          { const hold = TUNE.brakeHoldEnd === undefined ? 1 : TUNE.brakeHoldEnd; if (false && hold > 0 && brkAll > 0.3) { D.brkHoldT = (D.brkHoldT || 0) + dt; if (D.brkHoldT > hold) quit = true; } else D.brkHoldT = 0; }
           // stick turned the other way (any amount past centre) and the brake or B pressed: out of the drift, gas or not
           if ((TUNE.counterBrakeEnd !== false && !TUNE.legacyCar) && brkAll > 0.3 && st * D.side > 0.2) { quit = true; D.cool = 0.8; }
           if (quit) { D.on = false; D.pend = false; D.noEnter = brkAll > 0.1; }
@@ -8441,7 +8441,7 @@ bool inVoid(vec3 p) {
           const d = Math.hypot(dx, dz); if (d < rr && d > 1e-4) hit([dx / d, 0, dz / d], rr - d);
         }
         voidWalls(P[0], P[1], P[2], 0.15, hit);   // tunnel walls, barriers and roofs
-        solidPush(P[0], P[1], P[2], 0.15, TUNE.legacyCar ? hit : (n, depth) => { if (Math.abs(n[1]) < 0.75) { const l = Math.hypot(n[0], n[2]) || 1; return hit([n[0] / l, 0, n[2] / l], depth * l); } return hit(n, depth); });
+        solidPush(P[0], P[1], P[2], 0.15, true ? hit : (n, depth) => { if (Math.abs(n[1]) < 0.75) { const l = Math.hypot(n[0], n[2]) || 1; return hit([n[0] / l, 0, n[2] / l], depth * l); } return hit(n, depth); });
         for (const Bx of boxes) {
           if (P[1] > Bx.top || (Bx.bottom !== undefined && P[1] < Bx.bottom - 0.3)) continue;
           const dx = P[0] - Bx.x, dz = P[2] - Bx.z, c = Math.cos(Bx.yaw), s2 = Math.sin(Bx.yaw);
@@ -8724,7 +8724,7 @@ bool inVoid(vec3 p) {
     let tuneEl = null, tuneOpen = false;
     const TUNE_ROWS = [
       { k: 'airRevDelay', label: 'In the air: gas / brake flip the wheels after', min: 0, max: 3, step: 0.1, fmt: v => v.toFixed(1) + ' s', toggle: 'airRev' },
-      { nw: 1, k: 'brakeHoldEnd', label: 'Hold brake (gas or not) = drift ends after', min: 0, max: 3, step: 0.1, fmt: v => v <= 0 ? 'Off' : v.toFixed(1) + ' s' },
+      { nw: 1, hide: 1, k: 'brakeHoldEnd', label: 'Hold brake (gas or not) = drift ends after', min: 0, max: 3, step: 0.1, fmt: v => v <= 0 ? 'Off' : v.toFixed(1) + ' s' },
       { nw: 1, label: 'Steer the other way + brake = drift ends', toggle: 'counterBrakeEnd' },
       { k: 'revMph', label: 'Reverse allowed below', min: 0, max: 100, step: 1, fmt: v => v >= 100 ? 'Any speed' : v + ' mph' },
       { k: 'headSmooth', label: 'Head turn smoothing (inside)', min: 0, max: 100, step: 5, fmt: v => v + '%' },
@@ -8867,7 +8867,7 @@ bool inVoid(vec3 p) {
         list.scrollIntoView({ block: 'nearest' }); tuneEl.scrollTop = Math.max(0, list.offsetTop - 40);
       });
       TUNE_ROWS.forEach((r, ri) => {
-        if (r.nw && TUNE.legacyCar) return;
+        if (r.hide || (r.nw && TUNE.legacyCar)) return;
         const row = document.createElement('div'); row.dataset.label = r.label; row.dataset.i = ri; list.appendChild(row);
         const lab = document.createElement('div'); lab.className = 'tl';
         const name = document.createElement('span'); name.textContent = r.label; const val = document.createElement('b'); val.textContent = r.k ? r.fmt(TUNE[r.k]) : (TUNE[r.toggle] ? 'on' : 'off');
