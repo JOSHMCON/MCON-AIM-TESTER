@@ -246,6 +246,8 @@
   }
   body { font-family: var(--mono); background: #000; }
   .phone { background: #000; }
+  body.bare { background: #000; }
+  body.bare .phone { border-radius: 0; box-shadow: none; }
   button:focus-visible, input:focus-visible, textarea:focus-visible, .divider:focus-visible { outline: 2.5px solid var(--cyan); outline-offset: 2px; box-shadow: 0 0 14px rgba(51,195,255,.55); }
   .titlebar { gap: 6px; }
   .titlebar h1 { font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 16px; letter-spacing: .04em; text-transform: uppercase; }
@@ -574,9 +576,9 @@ var Curve = (function () {
   }
   // Output 0..100 for input 0..100; exactly 0 stays 0
   const outFor = (stick, x) => x > 0 ? Curve.at(paths[stick], x) : 0;
-  const sens = { l: 1.75, r: 1.75, z: 0.25 };
+  const sens = { l: 1.75, r: 1.75, z: 0.25, ltdz: 0, rtdz: 0 };   // (ltdz / rtdz: each trigger's own dead zone, 0 to 0.9)
   const SENS_DEFAULT = { l: 1.75, r: 1.75, z: 0.25 }, SENS_KEY = 'mcon-game-sens';
-  try { const v = JSON.parse(localStorage.getItem(SENS_KEY) || 'null'); if (v) for (const k of ['l', 'r', 'z']) if (typeof v[k] === 'number') sens[k] = clamp(v[k], 0.1, 10); } catch (_) {}
+  try { const v = JSON.parse(localStorage.getItem(SENS_KEY) || 'null'); if (v) { for (const k of ['l', 'r', 'z']) if (typeof v[k] === 'number') sens[k] = clamp(v[k], 0.1, 10); for (const k of ['ltdz', 'rtdz']) if (typeof v[k] === 'number') sens[k] = clamp(v[k], 0, 0.9); } } catch (_) {}
   let sensSaved = JSON.stringify(sens);
   function saveSens() { const j = JSON.stringify(sens); if (j !== sensSaved) { sensSaved = j; try { localStorage.setItem(SENS_KEY, j); } catch (_) {} } }
   setInterval(saveSens, 500);
@@ -5147,6 +5149,8 @@ bool inVoid(vec3 p) {
         rt = Math.max(rt || 0, trigAxis(p.axes[5] || 0, 'rtRest'));
         lt = Math.max(lt || 0, trigAxis(p.axes[4] || 0, 'ltRest'));
       }
+      const dz = (v, d) => (v || 0) <= d ? 0 : ((v || 0) - d) / (1 - d);   // your per-trigger dead zones
+      rt = dz(rt, sens.rtdz || 0); lt = dz(lt, sens.ltdz || 0);
       const b5 = p.buttons && p.buttons[5];
       return { rt: rt || 0, lt: lt || 0, rtRaw: trigState[7] ? trigState[7].raw : 0, ltRaw: trigState[6] ? trigState[6].raw : 0, r1: b5 && b5.pressed ? 1 : 0 };
     }
@@ -5268,6 +5272,7 @@ bool inVoid(vec3 p) {
     }
     // ---- Menu: Options opens it. D-pad or left stick moves, left/right changes, Cross/A selects, Circle/B goes back.
     let menuOpen = false, menuSel = 0, menuWin = 0, menuWheel = 0, navHold = 0, navDir = '';
+    const trigDzRow = (k, label) => ({ type: 'choice', label, get: () => Math.round((sens[k] || 0) * 100) + '%', step: d => { sens[k] = clamp(Math.round(((sens[k] || 0) + d * 0.05) * 100) / 100, 0, 0.9); saveSens(); } });
     const sensRow = (k, label) => ({ type: 'slider', label, get: () => sens[k], set: v => { sens[k] = v; } });
     let menuTune = false;
     function menuItems() {
@@ -5278,7 +5283,7 @@ bool inVoid(vec3 p) {
         { type: 'button', label: 'Resume', primary: true, act: () => closeMenu() },
         { type: 'button', label: 'Restart round', act: () => { closeMenu(); startRound(); } },
         { type: 'button', label: 'End round', act: () => endRound(true) },
-        sensRow('l', 'Left sens'), sensRow('r', 'Right sens'), sensRow('z', 'Zoom sens'),
+        sensRow('l', 'Left sens'), sensRow('r', 'Right sens'), sensRow('z', 'Zoom sens'), trigDzRow('ltdz', 'Left trigger dead zone'), trigDzRow('rtdz', 'Right trigger dead zone'),
         { type: 'button', label: 'Reset sensitivity', act: resetSens },
         { type: 'button', label: 'Back to the range', act: () => { closeMenu(); backToRange(); } },
         { type: 'choice', label: 'Light rays', get: () => FX.rayK ? FX.rayK + '%' : 'Off', step: d => fxStep('rayK', d, 0, 100) },
@@ -5296,7 +5301,7 @@ bool inVoid(vec3 p) {
       return [
         { type: 'choice', label: 'Mode', get: () => MODES[G.mode].name, step: d => { const i = order.indexOf(G.mode); G.mode = order[(i + d + order.length) % order.length]; } },
         { type: 'button', label: 'Start', primary: true, act: () => { closeMenu(); startRound(); } },
-        sensRow('l', 'Left sens'), sensRow('r', 'Right sens'), sensRow('z', 'Zoom sens'),
+        sensRow('l', 'Left sens'), sensRow('r', 'Right sens'), sensRow('z', 'Zoom sens'), trigDzRow('ltdz', 'Left trigger dead zone'), trigDzRow('rtdz', 'Right trigger dead zone'),
         { type: 'button', label: 'Reset sensitivity', act: resetSens },
         { type: 'button', label: 'Back to the range', act: () => { closeMenu(); backToRange(); } },
         { type: 'choice', label: 'Light rays', get: () => FX.rayK ? FX.rayK + '%' : 'Off', step: d => fxStep('rayK', d, 0, 100) },
@@ -10865,8 +10870,10 @@ bool inVoid(vec3 p) {
   $('expandBtn').addEventListener('pointerdown', e => e.stopPropagation());
 
   const canZoom = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('zoom', '2');
+  const bare = () => matchMedia('(pointer: coarse)').matches || innerWidth < 1000 || innerHeight < 500;   // a phone or small window: full screen, no phone frame
   function fitStage() {
-    const pad = 28, k = Math.max(0.2, Math.min((innerWidth - pad) / (852 + 24), (innerHeight - pad) / (393 + 24)));
+    const B = bare(); document.body.classList.toggle('bare', B);
+    const pad = B ? 0 : 28, fr = B ? 0 : 24, k = Math.max(0.2, Math.min((innerWidth - pad) / (852 + fr), (innerHeight - pad) / (393 + fr)));
     window.__mconZoom = k;
     if (canZoom) { $('stage').style.zoom = String(k); $('stage').style.transform = ''; }
     else $('stage').style.transform = `scale(${k})`;
