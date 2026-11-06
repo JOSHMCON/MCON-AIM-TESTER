@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v009 · Nov 6, 12:23 AM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v010 · Nov 6, 11:25 AM</span>
       </div>
 
       <div class="card sliders">
@@ -1033,7 +1033,7 @@ var Curve = (function () {
       let timer = 0, long = false;
       const name = el('div', { class: 'name wthumb', role: 'button', tabindex: '0' }, el('div', { class: 'ntext' }, el('span', { text: p.name }), el('span', { text: isBuiltin(p) ? 'Built-in' : `${modeName(p.mode)}, ${when(p.created)}` })), curveThumb([{ c: clean(p), color: '#A6FF3A' }]));
       name.addEventListener('pointerdown', () => { long = false; clearTimeout(timer); timer = setTimeout(() => { long = true; ui.editing = p.id; ui.editName = p.name; renderLoad(); }, 550); });
-      name.addEventListener('pointerup', () => { clearTimeout(timer); if (!long) loadProfile(p); });
+      name.addEventListener('pointerup', () => { clearTimeout(timer); if (!long) { loadProfile(p); window.__clickGuard = performance.now(); } });   // (the click that follows lands on whatever was under the sheet: swallowed below)
       name.addEventListener('pointerleave', () => clearTimeout(timer));
       name.addEventListener('pointercancel', () => clearTimeout(timer));
       name.addEventListener('contextmenu', e => e.preventDefault());
@@ -10862,7 +10862,7 @@ bool inVoid(vec3 p) {
     }
     if (open) { autoSave('started a test'); Game.open(); if (Game.recalTriggers) Game.recalTriggers(); } else { setFull(false); Game.close(); autoSave('closed the game'); }
   }
-  $('playBtn').addEventListener('click', () => setGame(true));
+  $('playBtn').addEventListener('click', () => { if (performance.now() - (window.__clickGuard || 0) < 600) return; setGame(true); });
   window.__mconFull = on => { const full = $('gameBox').classList.contains('full'); const want = on === undefined ? !full : on; setFull(want);   // the game fills the screen, and the browser goes full screen where it can
     try { const d = document, el = d.documentElement; if (want && !(d.fullscreenElement || d.webkitFullscreenElement)) (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); else if (!want && (d.fullscreenElement || d.webkitFullscreenElement)) (d.exitFullscreen || d.webkitExitFullscreen).call(d); } catch (_) {} return want; };
   {   // a newer version online? say so (checked when the page opens and every few minutes)
