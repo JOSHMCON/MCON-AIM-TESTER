@@ -635,10 +635,10 @@ var Curve = (function () {
     }
     h += `<line x1="${sx(50)}" y1="${U}" x2="${sx(50)}" y2="${SZ - U}" stroke="#3A3A3C" stroke-width="1.4"/>`;
     h += `<line x1="${U}" y1="${sy(50)}" x2="${SZ - U}" y2="${sy(50)}" stroke="#3A3A3C" stroke-width="1.4"/>`;
-    if (st.outer > 0) {
+    if (st.outer > 0 && topOf(st) < 99.95) {   // (at 100 it'd sit on the top edge, doubling up the endpoint's own 100 label)
       const ty = sy(topOf(st));
       h += `<line x1="${U}" y1="${ty}" x2="${SZ - U}" y2="${ty}" stroke="#6E6E73" stroke-width="1.5" stroke-dasharray="6 6"/>`;
-      h += `<text x="${SZ - U - 6}" y="${ty - 7}" font-size="15" font-weight="700" font-family="JetBrains Mono, monospace" fill="#8E8E93" text-anchor="end">${topOf(st).toFixed(1)}</text>`;
+      h += `<text x="${SZ - U - 6}" y="${ty - 7}" font-size="15" font-weight="700" font-family="JetBrains Mono, monospace" fill="#8E8E93" text-anchor="end">${topOf(st) > 93 ? '' : topOf(st).toFixed(1)}</text>`;
     }
     if (st.mode === 'draw' && st.stroke.length > 1) h += `<polyline points="${pts(st.stroke.map(q => shown(q[0], q[1])))}" fill="none" stroke="#3A3A3C" stroke-width="3"/>`;
     if (st.mode !== 'draw' && curveInfo.rad > 0) {
