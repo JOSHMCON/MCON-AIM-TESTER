@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v020 · Nov 6, 4:20 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v019 · Nov 6, 4:08 PM</span>
       </div>
 
       <div class="card sliders">
@@ -7717,7 +7717,7 @@ bool inVoid(vec3 p) {
           // will slow you), so easing off the trigger never feels like hitting the brakes.
           // ...and if you're going faster than the motor can turn the wheels (down a mountain, coming off a boost) with the
           // throttle held, it doesn't hold you back at all: the more throttle, the less it drags, so the extra speed carries
-          const coastK = Math.abs(cmd) > 0.08 ? 0 : 1, coastT = Math.min(RC.coastDrag * Math.max(0, Wd), RC.coastMax) * coastK;
+          const coastK = Math.max(0, 1 - Math.abs(cmd) * 1.25), coastT = Math.min(RC.coastDrag * Math.max(0, Wd), RC.coastMax) * coastK;
           let Tm;
           if (RC.gearsOn && E.mode === 'fwd') {
             // automatic gearbox: each gear tops out at a share of full speed and its pull fades toward that; first gear
@@ -8576,7 +8576,7 @@ bool inVoid(vec3 p) {
       // top speed sound it), below that it's the trigger
       const SK = (TUNE.enginePitch || 100) / 100;   // engine sound RPM: the note behaves as if max RPM were this much higher (sound only)
       const tyreRpm = vw / RC.r * 60 / (2 * Math.PI) / (RC.speedK || 1) * SK, hi = smooth(700, 900, tyreRpm);
-      if (hi > 0) rpm = rpm + (Math.min(16000 * Math.max(1, SK), 6300 + (tyreRpm - 800) * 8.5) * (0.55 + 0.45 * Math.max(load, 0.3)) - rpm) * hi;
+      if (hi > 0) rpm = rpm + (Math.min(10500 * Math.max(1, SK), 6300 + (tyreRpm - 800) * 8.5) * (0.55 + 0.45 * Math.max(load, 0.3)) - rpm) * hi;
       // water: skimming on top there's almost nothing holding the tyres back, so it revs high (nearly like in the air);
       // sunk and floating it bogs down, low and labouring
       const onW = S.surf && S.surf.some(x => x && x.kind === 'water');
@@ -10709,7 +10709,6 @@ bool inVoid(vec3 p) {
       s.gnow = (s.gnow === undefined ? now : s.gnow) + dt * 1000; now = s.gnow;
       if (!paused && B.g && !B.on) driveBoat(dt);
       if (!paused && K.g && !K.on) driveTruck(dt);
-      if (nameT > 0) { nameT -= dt; if (nameT <= 0) $('wname').hidden = true; }   // (pop-up names fade out in the car and boat too)
       if (paused) { /* everything holds still, the camera too */ }
       else if (B.on) { const bs = driveBoat(dt, binp); boatCamera(dt, binp, bs.speed); s.ads = 0; s.sprint = 0; }
       else if (K.on) { const ts = driveTruck(dt, tinp); truckCamera(dt, tinp, ts.speed, ts.boosting); s.ads = 0; s.sprint = 0; }
@@ -10806,6 +10805,7 @@ bool inVoid(vec3 p) {
       poseGun(dt);
       const scoped = !!Wn.scope && s.ads > 0.85;
       $('scope').hidden = !scoped; gun.visible = !scoped; cross.style.visibility = scoped ? 'hidden' : '';
+      if (nameT > 0) { nameT -= dt; if (nameT <= 0) $('wname').hidden = true; }
       hitFlash = Math.max(0, hitFlash - dt);
       cross.classList.toggle('hit', hitFlash > 0);
       cross.classList.toggle('ads', s.ads > 0.5);
