@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v008 · Nov 6, 12:22 AM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v009 · Nov 6, 12:23 AM</span>
       </div>
 
       <div class="card sliders">
@@ -4350,7 +4350,8 @@ function buildPriusModel(THREE, options) {
           const c = lCv.getContext('2d'); c.fillStyle = '#fbfbf8'; c.fillRect(0, 0, 1024, 392);
           const laps = lapTimes(); c.textBaseline = 'middle'; c.fillStyle = '#1d1f24';
           laps.slice(0, 10).forEach((t, k) => { const col = k < 5 ? 0 : 1, row = k % 5; c.save(); c.translate(90 + col * 470 + (row % 2) * 6, 62 + row * 70); c.rotate(((k * 5) % 3 - 1) * 0.015); handWrite(c, raceFmt(t), 0, 0, 34, '#1f2c74');
-            if (k === 0) handWrite(c, 'best', handWidth(raceFmt(t), 34) + 26, 2, 30, '#c4302b'); c.restore(); });   // smaller writing, two columns, and "best" in red by the best
+            const dev = Math.abs(t - 48.64) < 0.005, mineBest = !dev && k === laps.findIndex(q => Math.abs(q - 48.64) >= 0.005);
+            if (dev) handWrite(c, "dev's best", handWidth(raceFmt(t), 34) + 26, 2, 30, '#1d1f24'); else if (mineBest) handWrite(c, 'best', handWidth(raceFmt(t), 34) + 26, 2, 30, '#c4302b'); c.restore(); });   // smaller writing, two columns, and "best" in red by the best
           lTex.needsUpdate = true;
         };
         lapBoardDraw();
