@@ -318,7 +318,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v005 · Nov 6, 12:08 AM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v006 · Nov 6, 12:13 AM</span>
       </div>
 
       <div class="card sliders">
@@ -5297,6 +5297,7 @@ bool inVoid(vec3 p) {
         { type: 'choice', label: 'Creative mode', get: () => CW.on ? 'On' : 'Off', step: () => cwToggle() },
         { type: 'choice', label: 'Car', get: () => VEH === 'prius' ? 'Prius' : 'Truck', step: () => setVehicle(VEH === 'prius' ? 'truck' : 'prius') },
         { type: 'choice', label: 'Field of view', get: () => FOV_DEG + ' DEG', step: d => { FOV_DEG = clamp(FOV_DEG + d * 5, 60, 120); HFOV = FOV_DEG * Math.PI / 180; try { localStorage.setItem('mcon-fov', String(FOV_DEG)); } catch (_) {} } },
+        { type: 'choice', label: 'Full screen', get: () => window.__mconIsFull && window.__mconIsFull() ? 'On' : 'Off', step: () => { if (window.__mconFull) window.__mconFull(); } },
         { type: 'choice', label: 'Resolution', get: () => RES_H + 'p', step: d => { const i = RES_STEPS.indexOf(RES_H); RES_H = RES_STEPS[clamp(i + d, 0, RES_STEPS.length - 1)]; try { localStorage.setItem('mcon-res', String(RES_H)); } catch (_) {} resize(); } }
       ];
       return [
@@ -5315,6 +5316,7 @@ bool inVoid(vec3 p) {
         { type: 'choice', label: 'Creative mode', get: () => CW.on ? 'On' : 'Off', step: () => cwToggle() },
         { type: 'choice', label: 'Car', get: () => VEH === 'prius' ? 'Prius' : 'Truck', step: () => setVehicle(VEH === 'prius' ? 'truck' : 'prius') },
         { type: 'choice', label: 'Field of view', get: () => FOV_DEG + ' DEG', step: d => { FOV_DEG = clamp(FOV_DEG + d * 5, 60, 120); HFOV = FOV_DEG * Math.PI / 180; try { localStorage.setItem('mcon-fov', String(FOV_DEG)); } catch (_) {} } },
+        { type: 'choice', label: 'Full screen', get: () => window.__mconIsFull && window.__mconIsFull() ? 'On' : 'Off', step: () => { if (window.__mconFull) window.__mconFull(); } },
         { type: 'choice', label: 'Resolution', get: () => RES_H + 'p', step: d => { const i = RES_STEPS.indexOf(RES_H); RES_H = RES_STEPS[clamp(i + d, 0, RES_STEPS.length - 1)]; try { localStorage.setItem('mcon-res', String(RES_H)); } catch (_) {} resize(); } },
         { type: 'button', label: 'Exit game', act: () => { closeMenu(); dispatchEvent(new CustomEvent('mcon-exit-game')); } }
       ];
@@ -10856,6 +10858,23 @@ bool inVoid(vec3 p) {
     if (open) { autoSave('started a test'); Game.open(); if (Game.recalTriggers) Game.recalTriggers(); } else { setFull(false); Game.close(); autoSave('closed the game'); }
   }
   $('playBtn').addEventListener('click', () => setGame(true));
+  window.__mconFull = on => { const full = $('gameBox').classList.contains('full'); const want = on === undefined ? !full : on; setFull(want);   // the game fills the screen, and the browser goes full screen where it can
+    try { const d = document, el = d.documentElement; if (want && !(d.fullscreenElement || d.webkitFullscreenElement)) (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el); else if (!want && (d.fullscreenElement || d.webkitFullscreenElement)) (d.exitFullscreen || d.webkitExitFullscreen).call(d); } catch (_) {} return want; };
+  {   // a newer version online? say so (checked when the page opens and every few minutes)
+    const mine = ($('buildVer').textContent || '').split(' ')[0];
+    const check = () => { if (!/^https?:/.test(location.protocol) || /claude\.ai|claudeusercontent/.test(location.host)) return;
+      fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => { const m = t.match(/id="buildVer">(v\d+)/); if (!m || m[1] === mine || document.getElementById('updBar')) return;
+        const b = document.createElement('button'); b.id = 'updBar'; b.textContent = 'New version ' + m[1] + ' is out: tap to update';
+        Object.assign(b.style, { position: 'fixed', left: '50%', top: '10px', transform: 'translateX(-50%)', zIndex: 9999, background: '#33C3FF', color: '#04131c', font: '800 13px system-ui, sans-serif', padding: '10px 16px', borderRadius: '999px', boxShadow: '0 6px 24px rgba(0,0,0,.5)' });
+        b.addEventListener('click', () => { location.replace(location.pathname + '?v=' + Date.now()); }); document.body.appendChild(b); }).catch(() => {}); };
+    setTimeout(check, 3000); setInterval(check, 180000);
+  }
+  window.__mconIsFull = () => $('gameBox').classList.contains('full');
+  {   // Start on the controller in the curve editor starts the game
+    let prevStart = true;
+    setInterval(() => { const pads = navigator.getGamepads ? navigator.getGamepads() : []; let st = false; for (const p of pads) if (p && p.buttons[9] && p.buttons[9].pressed) st = true;
+      if (st && !prevStart && !gameOpen) setGame(true); prevStart = st; }, 50);
+  }
   $('menuBtn').addEventListener('click', e => { e.stopPropagation(); Game.toggleMenu(); });
   $('menuBtn').addEventListener('pointerdown', e => e.stopPropagation());
   addEventListener('mcon-exit-game', () => setGame(false));
