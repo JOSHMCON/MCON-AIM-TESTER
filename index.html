@@ -3591,7 +3591,7 @@ function buildPriusModel(THREE, options) {
 
     // ---- the 2004 Prius: same physics, sound and suspension as the truck, its own body on top
     var PS1_PATCH = null; const PR = { f: 0, face: 0 };
-    let VEH = 'prius'; try { VEH = localStorage.getItem('mcon-veh') || 'prius'; } catch (e) {}
+    let VEH = 'truck'; try { if (localStorage.getItem('mcon-veh-v2')) VEH = localStorage.getItem('mcon-veh') || 'truck'; else { localStorage.setItem('mcon-veh-v2', '1'); localStorage.setItem('mcon-veh', 'truck'); } } catch (e) {}   // (the green truck by default: lighter on the game than the Prius)
     const PRIUS_TAN = 0xbaa98e;   // Driftwood Pearl (Toyota 4S2), the 2004 tan
     function buildPriusInto(g, bodyG) {
       const PS = 0.88;   // the model comes 5.1 m long; this makes it a real Prius (4.5 m, 2.7 m wheelbase)
@@ -8917,7 +8917,8 @@ bool inVoid(vec3 p) {
     const RACE = { start: 95, fin: RD.N - 75, t: null, best: null, last: -1, shown: 0, final: null };
     // the lap board's list: your best mountain-loop times, kept between visits
     let lapBoardDraw = null;
-    function lapTimes() { try { const a = JSON.parse(localStorage.getItem('mcon-laps') || '[]'); return Array.isArray(a) ? a.filter(x => typeof x === 'number').sort((p, q) => p - q) : []; } catch (_) { return []; } }
+    const LAP_BAKED = 48.64;   // the time to beat, always on the board
+    function lapTimes() { let a = []; try { const v = JSON.parse(localStorage.getItem('mcon-laps') || '[]'); if (Array.isArray(v)) a = v.filter(x => typeof x === 'number'); } catch (_) {} if (!a.some(x => Math.abs(x - LAP_BAKED) < 0.005)) a.push(LAP_BAKED); return a.sort((p, q) => p - q); }
     function lapSave(t) { const a = lapTimes(); a.push(t); a.sort((p, q) => p - q); try { localStorage.setItem('mcon-laps', JSON.stringify(a.slice(0, 10))); } catch (_) {} if (lapBoardDraw) lapBoardDraw(); }
     // shot the lap board's title: into the truck at the start of the tunnel, pointing in, ready to race
     const CP = { down: 0, saved: false, car: null, foot: null };
