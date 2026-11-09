@@ -1359,69 +1359,115 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const r = Math.hypot(x, z), a = Math.atan2(x, z);
       let c = shoreR(a) - r;
       for (const I of ISLANDS) c = Math.max(c, I.R - Math.hypot(x - I.x, z - I.z));
-      c = Math.max(c, penU(x, z));
+      c = Math.max(c, isleU(x, z));   // M Island and the neck
       return c;
     }
     const trailA = r => PASS_A + 0.05 * Math.sin(r * 0.018) + 0.03 * Math.sin(r * 0.047 + 1);
     const trailLat = (x, z) => { const r = Math.hypot(x, z); return r * angDiff(Math.atan2(x, z), trailA(r)); };
-    // ======================= The tunnel and the peninsula =======================
-    // A plain road tunnel runs straight through the ridge behind the lake house. It comes out high above the north
-    // beach, where a big dirt kicker launches you down the hill onto a wide peninsula with an old dirt rally track.
-    const PEN = { x: 0, z: 725, rx: 255, rz: 195 };
-    // how far inside the peninsula's shoreline a point is (m, negative = in the water)
-    function penU(x, z) {
-      const dx = x - PEN.x, dz = z - PEN.z, a = Math.atan2(dx, dz), q = Math.hypot(dx / PEN.rx, dz / PEN.rz);
-      const e = (1 - q) * 195 + 9 * Math.sin(a * 3 + 0.6) + 6 * Math.sin(a * 7 + 2.1) + 3 * Math.sin(a * 13 + 0.4);
-      const neck = z > 380 && z < 720 ? 135 - Math.abs(x) + 8 * Math.sin(z * 0.045) : -1e9;   // a wide neck joins it to the coast
-      return Math.max(e, neck);
+    // ======================= The tunnel and M Island =======================
+    // The road tunnel through the ridge comes out high above the north beach. A clean downhill runs straight down onto a
+    // short neck of land and up a huge dirt ramp at its tip, which throws you across the water onto M Island: a big island
+    // cut like the MCON "M" (three slits) with a lake, a rally track (angled berms, a gap jump, a wooden loop-the-loop)
+    // and a wave-race stretch back across the sea, between buoys, to the foot of the ramp.
+    // Laid out from Josh's drawing: drawing pixels -> metres at 3.1 m per pixel; the drawing's up = +z, its right = -x.
+    const PEN = { x: 0, z: 725, rx: 1, rz: 1 };   // (the old peninsula is gone; these two stay so older code still runs)
+    function penU(x, z) { return -1e9; }
+    const ISK = (sx, sy) => [-(sx - 452) * 3.1, 640 + (757 - sy) * 3.1];
+    const crPts = (P, n, closed) => {   // Catmull-Rom through points
+      const N = P.length, get = i => closed ? P[(i + N) % N] : P[clamp(i, 0, N - 1)], out = [], segs = closed ? N : N - 1;
+      for (let i = 0; i < segs; i++) {
+        const p0 = get(i - 1), p1 = get(i), p2 = get(i + 1), p3 = get(i + 2);
+        for (let k = 0; k < n; k++) {
+          const t = k / n, t2 = t * t, t3 = t2 * t, f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+          out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+        }
+      }
+      if (!closed) out.push(P[N - 1].slice());
+      return out;
+    };
+    // the island's shape as a signed distance field (m inside the shore, negative out at sea), 4 m cells
+    const ISLE = (() => {
+      const OUT = crPts([[410, 318], [370, 262], [325, 200], [360, 160], [420, 116], [470, 99], [520, 94], [570, 100], [640, 123], [700, 152], [760, 192], [805, 236], [835, 282], [848, 330], [848, 385], [836, 425], [826, 450],
+        [790, 440], [760, 426], [700, 388], [645, 352], [606, 336], [645, 372], [690, 404], [732, 448], [752, 488], [767, 516], [745, 562], [702, 600], [662, 640], [640, 655],
+        [600, 636], [540, 604], [500, 570], [464, 538], [520, 612], [558, 652], [584, 686], [586, 702], [568, 722], [500, 750], [440, 757], [400, 751], [350, 731], [300, 700],
+        [240, 622], [200, 546], [170, 482], [155, 430], [164, 380], [194, 322], [234, 276], [272, 243], [340, 282]].map(p => ISK(p[0], p[1])), 10, true);
+      const POND = crPts([[255, 380], [280, 356], [315, 350], [370, 360], [382, 392], [366, 435], [340, 470], [310, 480], [276, 466], [254, 452], [249, 418]].map(p => ISK(p[0], p[1])), 10, true);
+      const C = 4, x0 = -1360, z0 = 540, nx = 600, nz = 580, n1 = nx + 1, inside = new Uint8Array(n1 * (nz + 1));
+      for (let j = 0; j <= nz; j++) {   // even-odd fill, row by row (the lake is a hole)
+        const z = z0 + j * C, xs = [];
+        for (const P of [OUT, POND]) for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((a[1] > z) !== (b[1] > z)) xs.push(a[0] + (z - a[1]) / (b[1] - a[1]) * (b[0] - a[0])); }
+        xs.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < xs.length; k += 2) for (let i = Math.max(0, Math.ceil((xs[k] - x0) / C)); i <= Math.min(nx, Math.floor((xs[k + 1] - x0) / C)); i++) inside[i + n1 * j] = 1;
+      }
+      const chamfer = seed => {   // distance (m) to the nearest seed node, two passes
+        const D = new Float32Array(n1 * (nz + 1)), A = C, B = C * Math.SQRT2;
+        for (let k = 0; k < D.length; k++) D[k] = seed(k) ? 0 : 1e9;
+        for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const k = i + n1 * j; let d = D[k]; if (i > 0) d = Math.min(d, D[k - 1] + A); if (j > 0) { d = Math.min(d, D[k - n1] + A); if (i > 0) d = Math.min(d, D[k - n1 - 1] + B); if (i < nx) d = Math.min(d, D[k - n1 + 1] + B); } D[k] = d; }
+        for (let j = nz; j >= 0; j--) for (let i = nx; i >= 0; i--) { const k = i + n1 * j; let d = D[k]; if (i < nx) d = Math.min(d, D[k + 1] + A); if (j < nz) { d = Math.min(d, D[k + n1] + A); if (i < nx) d = Math.min(d, D[k + n1 + 1] + B); if (i > 0) d = Math.min(d, D[k + n1 - 1] + B); } D[k] = d; }
+        return D;
+      };
+      const dOut = chamfer(k => !inside[k]), dIn = chamfer(k => inside[k]), U = new Float32Array(n1 * (nz + 1));
+      for (let k = 0; k < U.length; k++) U[k] = inside[k] ? dOut[k] - C / 2 : -(dIn[k] - C / 2);
+      return { C, x0, z0, nx, nz, n1, U, OUT, POND };
+    })();
+    // the neck of land at the foot of the tunnel road, with the big ramp on its tip
+    const NECK = { hw: 46, tip: 600 };
+    const neckU = (x, z) => z < 440 || z > 680 ? -1e9 : Math.min(NECK.hw - Math.abs(x) + 3 * Math.sin(z * 0.07), NECK.tip - z + 4 * Math.sin(x * 0.09));
+    // how far inside the shore of M Island (or the neck) a point is, in metres; negative = out in the water
+    function isleU(x, z) {
+      const I = ISLE, fx = (x - I.x0) / I.C, fz = (z - I.z0) / I.C;
+      let u = -1e3;
+      if (fx >= 0 && fz >= 0 && fx < I.nx && fz < I.nz) {
+        const ix = Math.floor(fx), iz = Math.floor(fz), a = fx - ix, b = fz - iz, k = ix + I.n1 * iz, U = I.U;
+        u = (U[k] * (1 - a) + U[k + 1] * a) * (1 - b) + (U[k + I.n1] * (1 - a) + U[k + I.n1 + 1] * a) * b;
+      }
+      return Math.max(u, neckU(x, z));
     }
-    const penHills = (x, z) => 3.4 * Math.sin(x * 0.019 + 1) * Math.cos(z * 0.022 - 0.5) + 2 * Math.sin((x - z) * 0.034 + 2) + 1.2 * Math.cos(x * 0.05 + z * 0.041);
-    function penH(x, z) {
-      const u = penU(x, z); if (u < -60) return -1e9;
-      if (u < 0) return SEA + 0.35 + u * 0.12;
-      const top = Math.max(0.8, 5 + 0.9 * penHills(x, z));
-      return SEA + 0.35 + (top - SEA - 0.35) * smooth(0, 30, u);
+    const isleHills = (x, z) => 3.6 + 2.6 * Math.sin(x * 0.011 + 1) * Math.cos(z * 0.009 - 0.5) + 1.8 * Math.sin((x - z) * 0.017 + 2) + 1.0 * Math.cos(x * 0.027 + z * 0.021);
+    // the island's (and the neck's) ground height, or -1e9 well away from them
+    function isleH(x, z) {
+      const u = isleU(x, z); if (u < -70) return -1e9;
+      if (u < 0) return Math.max(SEA - 30, SEA + 0.35 + u * 0.13);
+      const top = neckU(x, z) >= u - 0.01 ? SEA + 1.8 : SEA + 1.5 + Math.max(0.5, isleHills(x, z));
+      return SEA + 0.35 + (top - SEA - 0.35) * smooth(0, 40, u);
     }
-    // ---- dirt tracks: a big closed rally loop, plus the run down from the tunnel that joins it
+    // ---- the track: one closed lap (ramp, flight, the island, the water, back up the beach) plus the road down from the tunnel
     const TRACK = (() => {
-      const C = { x: PEN.x, z: PEN.z };
-      const LOOP = [[-150, -157], [-60, -160], [40, -158], [130, -150], [185, -120], [205, -70], [200, -10], [180, 45], [195, 95], [170, 140], [120, 160], [60, 150], [30, 110], [40, 60], [70, 20], [100, -20], [90, -70], [40, -95], [-10, -80], [-30, -30], [-20, 30], [0, 80], [-20, 130], [-70, 165], [-130, 165], [-180, 130], [-200, 70], [-195, 10], [-180, -50], [-190, -110]]
-        .map(([x, z]) => [C.x + x, C.z + z]);
-      const SPUR = [[0, 419], [0, 432], [0, 455], [0, 485], [6, 520], [26, 552], [62, 567]];
+      const S = (sx, sy, k) => { const p = ISK(sx, sy); return [p[0], p[1], k || 'L']; };
+      // [x, z, what the stretch starting here is]: L dirt, A in the air, W on the water
+      const LAP = [
+        [0, 525, 'L'], [0, 555, 'L'], [0, 594, 'A'], [0, 598, 'A'], [0, 604, 'L'],                 // the big ramp, the flight, the landing
+        S(452, 745), S(452, 700), S(449, 640), S(447, 580), S(444, 530), S(435, 512), S(418, 508), S(402, 518), S(400, 560), S(405, 610), S(403, 640),
+        S(390, 655), S(365, 658), S(345, 645), S(338, 600), S(335, 545), S(325, 515),
+        S(300, 500), S(255, 485), S(215, 465), S(192, 425), S(195, 375), S(215, 333), S(255, 305), S(305, 298), S(352, 315), S(380, 343),
+        S(400, 372), S(445, 405), S(495, 465), S(535, 505),                                         // the gap jump
+        S(580, 545), S(630, 580), S(675, 600), S(700, 590), S(703, 565), S(685, 535), S(650, 500), S(605, 455), S(565, 412),
+        S(540, 380), S(518, 345),                                                                   // through the loop-the-loop
+        S(500, 315), S(485, 285), S(465, 258), S(432, 240), S(400, 230), S(388, 210), S(400, 183), S(440, 160), S(495, 138), S(528, 124),
+        S(548, 140), S(555, 190), S(558, 250), S(562, 300), S(572, 312), S(585, 298), S(594, 220), S(605, 170), S(622, 158), S(636, 175),
+        S(640, 250), S(642, 315), S(655, 333), S(672, 310), S(695, 250), S(715, 212), S(733, 212), S(740, 245), S(733, 300), S(742, 360),
+        S(775, 410), S(820, 445, 'W'),                                                              // off the island: wave race
+        S(850, 478, 'W'), S(868, 535, 'W'), S(885, 588, 'W'), S(870, 655, 'W'),
+        [-1190, 790, 'W'], [-960, 620, 'W'], [-700, 530, 'W'], [-450, 488, 'W'], [-260, 468, 'W'], [-150, 466, 'W'],
+        [-100, 474, 'L'], [-56, 480, 'L'], [-22, 488, 'L'], [-5, 498, 'L'], [0, 510, 'L']           // up the beach, square on to the foot of the ramp
+      ];
+      const SPUR = [[0, 412, 'L'], [0, 440, 'L'], [0, 470, 'L'], [0, 500, 'L'], [0, 515, 'L']];   // straight down from the tunnel
       const paths = [
-        { pts: LOOP, closed: true, F: [
-          { s: 40, kind: 'crest', H: 2.0, L: 28 }, { s: 85, kind: 'table', H: 3.2, Lt: 16, T: 12, Ll: 30 }, { s: 228, kind: 'whoops', H: 0.6, P: 6.5, n: 6 },
-          { s: 290, kind: 'crest', H: 2.4, L: 30 }, { s: 370, kind: 'double', H: 2.2, Lt: 11, G: 10, H2: 2.4, Lu: 4, T2: 2, Ld: 22 }, { s: 450, kind: 'crest', H: 1.8, L: 26 },
-          { s: 640, kind: 'table', H: 2.4, Lt: 12, T: 10, Ll: 22 }, { s: 820, kind: 'step', H: 1.4, Lt: 8, G: 4, H2: 2.8, Lu: 3.5, T2: 10, Ld: 16 }, { s: 880, kind: 'crest', H: 2.6, L: 32 },
-          { s: 1135, kind: 'table', H: 3.0, Lt: 15, T: 14, Ll: 28 }, { s: 1215, kind: 'crest', H: 2.0, L: 28 }, { s: 1300, kind: 'double', H: 2.2, Lt: 11, G: 10, H2: 2.4, Lu: 4, T2: 2, Ld: 22 },
-          { s: 1380, kind: 'whoops', H: 0.6, P: 6.5, n: 6 }, { s: 1450, kind: 'table', H: 2.6, Lt: 13, T: 12, Ll: 25 }, { s: 1530, kind: 'crest', H: 2.2, L: 30 }, { s: 1606, kind: 'crest', H: 1.6, L: 26 }] },
-        { pts: SPUR, closed: false, F: [{ s: 12, kind: 'kicker', H: 2.4, Lt: 17, Lb: 6 }] }
+        { pts: LAP, closed: true, F: [
+          { at: [0, 525], kind: 'kicker', H: 20, Lt: 55, Lb: 12 },                                 // the big ramp: 20 m tall, lip about 36 degrees
+          { at: [0, 602], kind: 'landing', H: 22, Lu: 22, Ld: 80 },                                // its landing: a tall mound at the water's edge, steep down the far side
+          { at: ISK(392, 360), kind: 'kicker', H: 5, Lt: 22, Lb: 5 },                              // the gap jump...
+          { after: 62, kind: 'landing', H: 5, Lu: 9, Ld: 70 }],                                    // ...and its landing
+          LOOP: [ISK(527, 362)] },
+        { pts: SPUR, closed: false, F: [] }
       ];
       const one = (f, d) => {
         if (d < 0) return 0;
-        if (f.kind === 'table') {
-          if (d < f.Lt) return f.H * Math.pow(d / f.Lt, 2);
-          if (d < f.Lt + f.T) return f.H;
-          if (d < f.Lt + f.T + f.Ll) return f.H * 0.5 * (1 + Math.cos(Math.PI * (d - f.Lt - f.T) / f.Ll));
-          return 0;
-        }
         if (f.kind === 'kicker') { if (d < f.Lt) return f.H * Math.pow(d / f.Lt, 2); if (d < f.Lt + f.Lb) return f.H * 0.5 * (1 + Math.cos(Math.PI * (d - f.Lt) / f.Lb)); return 0; }
-        if (f.kind === 'crest') return d < f.L ? f.H * Math.pow(Math.sin(Math.PI * d / f.L), 2) : 0;
-        if (f.kind === 'double' || f.kind === 'step') {
-          if (d < f.Lt) return f.H * Math.pow(d / f.Lt, 2);
-          let e = d - f.Lt;
-          if (f.kind === 'step') { if (e < f.G) return f.H * (1 - smooth(0, f.G, e)) * 0.35; }
-          else if (e < f.G) return 0;
-          e -= f.G;
-          if (e < f.Lu) return f.H2 * 0.5 * (1 - Math.cos(Math.PI * e / f.Lu));
-          e -= f.Lu; if (e < f.T2) return f.H2;
-          e -= f.T2; if (e < f.Ld) return f.H2 * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld));
-          return 0;
-        }
-        if (f.kind === 'whoops') { if (d > f.P * f.n) return 0; return f.H * 0.5 * (1 - Math.cos(2 * Math.PI * d / f.P)); }
+        if (f.kind === 'landing') { if (d < f.Lu) return f.H * 0.5 * (1 - Math.cos(Math.PI * d / f.Lu)); const e = d - f.Lu; return e < f.Ld ? f.H * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld)) : 0; }
         return 0;
       };
-      const X = [], Z = [], TX = [], TZ = [], KS = [], PI = [], SI = [], prof = [];
+      const X = [], Z = [], TX = [], TZ = [], KS = [], PI = [], SI = [], KD = [], prof = [];
       paths.forEach((pa, pid) => {
         const P = pa.pts, n = P.length, dense = [];
         const get = i => pa.closed ? P[(i + n) % n] : P[clamp(i, 0, n - 1)];
@@ -1430,21 +1476,26 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
           const p0 = get(i - 1), p1 = get(i), p2 = get(i + 1), p3 = get(i + 2);
           for (let k = 0; k < 300; k++) {
             const t = k / 300, t2 = t * t, t3 = t2 * t, f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-            dense.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+            dense.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1]), p1[2]]);
           }
         }
         if (!pa.closed) dense.push(P[n - 1].slice());
-        const pts = [[dense[0][0], dense[0][1]]]; let acc = 0;
+        const pts = [dense[0].slice()]; let acc = 0;
         const lim = pa.closed ? dense.length : dense.length - 1;
         for (let i = 1; i <= lim; i++) {
           const a = dense[i - 1].slice(), b = dense[i % dense.length]; let d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-          while (acc + d >= 1) { const t = (1 - acc) / d, q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; pts.push(q); a[0] = q[0]; a[1] = q[1]; d = Math.hypot(b[0] - a[0], b[1] - a[1]); acc = 0; }
+          while (acc + d >= 1) { const t = (1 - acc) / d, q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2]]; pts.push(q); a[0] = q[0]; a[1] = q[1]; d = Math.hypot(b[0] - a[0], b[1] - a[1]); acc = 0; }
           acc += d;
         }
+        if (pa.closed && Math.hypot(pts[pts.length - 1][0] - pts[0][0], pts[pts.length - 1][1] - pts[0][1]) < 0.5) pts.pop();
         const N = pts.length, idx = k => pa.closed ? (k + N) % N : clamp(k, 0, N - 1), base = X.length, hd = [], kk = [];
-        for (let i = 0; i < N; i++) { const q = pts[idx(i + 1)], o = pts[idx(i - 1)], dx = q[0] - o[0], dz = q[1] - o[1], L = Math.hypot(dx, dz) || 1; X.push(pts[i][0]); Z.push(pts[i][1]); TX.push(dx / L); TZ.push(dz / L); hd.push(Math.atan2(dx, dz)); }
+        for (let i = 0; i < N; i++) { const q = pts[idx(i + 1)], o = pts[idx(i - 1)], dx = q[0] - o[0], dz = q[1] - o[1], L = Math.hypot(dx, dz) || 1; X.push(pts[i][0]); Z.push(pts[i][1]); TX.push(dx / L); TZ.push(dz / L); hd.push(Math.atan2(dx, dz)); KD.push(pts[i][2] === 'A' ? 1 : pts[i][2] === 'W' ? 2 : 0); }
         for (let i = 0; i < N; i++) kk.push(angDiff(hd[idx(i + 1)], hd[idx(i - 1)]) / (pa.closed ? 2 : (idx(i + 1) - idx(i - 1) || 1)));
         for (let i = 0; i < N; i++) { let s = 0; for (let j = -14; j <= 14; j++) s += kk[idx(i + j)]; KS.push(s / 29); PI.push(pid); SI.push(i); }
+        const near = (x, z) => { let b = 0, bd = 1e18; for (let i = 0; i < N; i++) { const d = (pts[i][0] - x) ** 2 + (pts[i][1] - z) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
+        let last = 0; for (const f of pa.F) { f.s = f.at ? near(f.at[0], f.at[1]) : last + f.after; last = f.s; }
+        for (const f of pa.F) for (let s = f.s - 35; s < f.s + (f.Lt || 0) + (f.Lb || 0) + (f.Lu || 0) + 10; s++) KS[base + idx(s)] = 0;   // no berm tilt on or just before a jump
+        pa.loops = (pa.LOOP || []).map(p => ({ s: near(p[0], p[1]) }));
         const pr = new Float32Array(N * 4 + 8);
         for (let j = 0; j < pr.length; j++) { const s = j / 4; let h = 0; for (const f of pa.F) h = Math.max(h, one(f, pa.closed ? ((s - f.s) % N + N) % N : s - f.s)); pr[j] = h; }
         Object.assign(pa, { N, base }); prof.push(pr);
@@ -1452,35 +1503,36 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const hash = new Map(), key = (cx, cz) => cx * 100003 + cz;
       for (let i = 0; i < X.length; i++) { const k = key(Math.floor(X[i] / 10), Math.floor(Z[i] / 10)); let a = hash.get(k); if (!a) hash.set(k, a = []); a.push(i); }
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (let i = 0; i < X.length; i++) { x0 = Math.min(x0, X[i]); x1 = Math.max(x1, X[i]); z0 = Math.min(z0, Z[i]); z1 = Math.max(z1, Z[i]); }
-      return { paths, X, Z, TX, TZ, KS, PI, SI, prof, hash, key, HW: 7.5, SH: 4, box: { x0: x0 - 30, x1: x1 + 30, z0: z0 - 30, z1: z1 + 30 } };
+      return { paths, X, Z, TX, TZ, KS, PI, SI, KD: Int8Array.from(KD), prof, hash, key, HW: 9, SH: 5, BERM: 5, box: { x0: x0 - 40, x1: x1 + 40, z0: z0 - 40, z1: z1 + 40 } };
     })();
-    // where (x, z) is relative to the nearest track: s along it, l to the side (+ = left of travel), or null if far away
+    // where (x, z) is relative to the nearest dirt track: s along it, l to the side (+ = left of travel), or null if far
+    // away (or if the nearest bit of the lap is in the air or out on the water)
     function trackAt(x, z) {
       const T = TRACK, B = T.box;
       if (x < B.x0 || x > B.x1 || z < B.z0 || z > B.z1) return null;
       const cx = Math.floor(x / 10), cz = Math.floor(z / 10);
-      let best = -1, bd = 400;
-      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const L = T.hash.get(T.key(cx + a, cz + b)); if (!L) continue; for (const i of L) { const d = (T.X[i] - x) ** 2 + (T.Z[i] - z) ** 2; if (d < bd) { bd = d; best = i; } } }
-      if (best < 0) return null;
+      let best = -1, bd = 900;
+      for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) { const L = T.hash.get(T.key(cx + a, cz + b)); if (!L) continue; for (const i of L) { const d = (T.X[i] - x) ** 2 + (T.Z[i] - z) ** 2; if (d < bd) { bd = d; best = i; } } }
+      if (best < 0 || T.KD[best]) return null;
       const dx = x - T.X[best], dz = z - T.Z[best], along = dx * T.TX[best] + dz * T.TZ[best];
       const pa = T.paths[T.PI[best]], si = T.SI[best];
       let s = si + along; if (pa.closed) s = (s + pa.N) % pa.N; else s = clamp(s, 0, pa.N - 1);
       return { s, l: dx * T.TZ[best] - dz * T.TX[best], i: best, p: T.PI[best] };
     }
-    // extra height the tracks add to the ground: jumps, rollers and banked corners
+    // the jump profile along the track at s (m above the ground), between the 0.25 m samples
+    function trackAlong(q) { const pr = TRACK.prof[q.p], j = q.s * 4, j0 = Math.floor(j), fr = j - j0, L = pr.length; return pr[j0 % L] * (1 - fr) + pr[(j0 + 1) % L] * fr; }
+    // extra height the tracks add to the ground: jumps and steep banked berms in the tight corners
     function trackExtra(x, z) {
       const q = trackAt(x, z); if (!q) return 0;
-      const T = TRACK, a = Math.abs(q.l), edge = T.HW + T.SH + 5;
-      if (a > edge) return 0;
-      const pr = T.prof[q.p], j = q.s * 4, j0 = Math.floor(j), fr = j - j0, L = pr.length;
-      const along = pr[j0 % L] * (1 - fr) + pr[(j0 + 1) % L] * fr;
-      const across = a <= T.HW ? 1 : a >= T.HW + T.SH ? 0 : smooth(T.HW + T.SH, T.HW, a);
+      const T = TRACK, a = Math.abs(q.l), along = trackAlong(q), sh = Math.max(T.SH, along * 1.1);
+      if (a > T.HW + Math.max(sh, T.BERM + 9)) return 0;
+      const across = a <= T.HW ? 1 : a >= T.HW + sh ? 0 : smooth(T.HW + sh, T.HW, a);
       let h = along * across;
-      const k = T.KS[q.i], bank = clamp((Math.abs(k) - 1 / 90) * 70, 0, 1);
-      if (bank > 0) {   // berms: the outside of tighter corners is banked up
-        const o = Math.sign(k) * -q.l;
-        const up = 2.0 * bank * smooth(-3, T.HW, o);
-        h += o <= T.HW ? up : o < T.HW + 5 ? up * smooth(T.HW + 5, T.HW, o) : 0;
+      const k = T.KS[q.i], bank = clamp((Math.abs(k) - 1 / 130) * 90, 0, 1);
+      if (bank > 0) {   // berms: the whole track tilts up toward the outside of the corner, with a tall lip to rail against
+        const o = Math.sign(k) * -q.l, top = T.BERM * bank;
+        const up = top * Math.pow(smooth(-T.HW, T.HW + 2, o), 1.4);
+        h += o <= T.HW + 2 ? up : o < T.HW + 9 ? up * smooth(T.HW + 9, T.HW + 2, o) : 0;
       }
       return h;
     }
@@ -1876,15 +1928,16 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     const inCaveAt = (x, z, y) => !!caveHere(x, z, y) || (y !== undefined && ringGround(x, z, y) !== null);
     // Once the ground mesh exists, every height and slope query reads its actual triangles, so wheels, feet,
     // trees and particles sit exactly on the visible ground. Before that (while building), the smooth formula.
-    let GGRID = null;
-    function gridCell(x, z) {
-      const G = GGRID, fx = (x - G.x0) / G.cell, fz = (z - G.z0) / G.cell;
-      if (!(fx >= 0 && fz >= 0 && fx < G.n && fz < G.n)) return null;
-      const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, n1 = G.n + 1, H = G.h;
+    let GGRID = null, IGRID = null;   // (IGRID: M Island's own grid, beyond the main one)
+    function gridCell(x, z, G) {
+      G = G || GGRID; const fx = (x - G.x0) / G.cell, fz = (z - G.z0) / G.cell, nx = G.nx || G.n, nz = G.nz || G.n;
+      if (!(fx >= 0 && fz >= 0 && fx < nx && fz < nz)) return null;
+      const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, n1 = nx + 1, H = G.h;
       return { u, v, ha: H[ix + n1 * iz], hb: H[ix + n1 * (iz + 1)], hc: H[ix + 1 + n1 * (iz + 1)], hd: H[ix + 1 + n1 * iz] };
     }
     function heightAt(x, z) {
       if (GGRID) { const c = gridCell(x, z); if (c) { const hg = (c.u + c.v <= 1 ? c.ha + (c.hd - c.ha) * c.u + (c.hb - c.ha) * c.v : c.hc + (c.hb - c.hc) * (1 - c.u) + (c.hd - c.hc) * (1 - c.v)) + trackExtra(x, z); return TT_HOLE && groundHoleAt(x, z) ? holeHeight(x, z, hg) : hg; } }
+      if (IGRID) { const c = gridCell(x, z, IGRID); if (c) return (c.u + c.v <= 1 ? c.ha + (c.hd - c.ha) * c.u + (c.hb - c.ha) * c.v : c.hc + (c.hb - c.hc) * (1 - c.u) + (c.hd - c.hc) * (1 - c.v)) + trackExtra(x, z); }
       if (TT_HOLE && groundHoleAt(x, z)) return holeHeight(x, z);
       return heightA(x, z);
     }
@@ -1892,7 +1945,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     function groundNormal(x, z) {
       let dx, dz;
       const pc = TT_HOLE && groundHoleAt(x, z);
-      const c = GGRID && !pc ? gridCell(x, z) : null;
+      const c = GGRID && !pc ? gridCell(x, z) || (IGRID ? gridCell(x, z, IGRID) : null) : null;
       if (c) { const s = GGRID.cell; if (c.u + c.v <= 1) { dx = (c.hd - c.ha) / s; dz = (c.hb - c.ha) / s; } else { dx = (c.hc - c.hb) / s; dz = (c.hc - c.hd) / s; } }
       else { dx = (heightA(x + 0.5, z) - heightA(x - 0.5, z)); dz = (heightA(x, z + 0.5) - heightA(x, z - 0.5)); }
       const l = Math.hypot(dx, 1, dz); return [-dx / l, 1 / l, -dz / l];
@@ -1995,13 +2048,12 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
           h = Math.max(h, ih);
         }
       }
-      if (c < 110 || penU(x, z) > -60) h = Math.max(h, penH(x, z));   // the peninsula
+      { const ih = isleH(x, z); if (ih > h) h = ih; }   // M Island, and the neck the big ramp stands on
       if (TUNNEL_MODE === 'shaped2' || TUNNEL_MODE === 't3') h = mtnShape(x, z, h);   // (after the coast, so the shoreline doesn't undo it)
-      if (Math.abs(x) < 36 && z > CAVE.N.z + 5 && z < 525) {   // out of the tunnel: a gentle apron to the kicker, then a steep landing hill
-        const d = z - 446, p0 = d < 0 ? CAVE.fN - (z - (CAVE.N.z + 6)) * 0.06 : 24.4 - 0.7 * (d - 5 * (1 - Math.exp(-d / 5)));
-        const pf = (p0 + 4.5 + Math.sqrt((p0 - 4.5) * (p0 - 4.5) + 30)) / 2;   // rounds off into the flat at the bottom
-        const w = smooth(36, 16, Math.abs(x)) * smooth(CAVE.N.z + 5, CAVE.N.z + 9, z) * smooth(525, 505, z);
-        h = h + (pf - h) * w;
+      if (Math.abs(x) < 44 && z > CAVE.N.z + 5 && z < 540) {   // out of the tunnel: one clean downhill straight onto the neck
+        const p = CAVE.fN + (SEA + 1.6 - CAVE.fN) * smooth(CAVE.N.z + 6, 508, z);
+        const w = smooth(44, 20, Math.abs(x)) * smooth(CAVE.N.z + 5, CAVE.N.z + 9, z) * smooth(540, 515, z);
+        h = h + (p - h) * w;
       }
       return ringCarve(x, z, h);
     }
@@ -2020,6 +2072,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const c = coastDist(x, z), r = Math.hypot(x, z);
       if (lakeHouseColor(x, z, h, out)) return;
       if (h < SEA - 0.3) { out.copy(GC.sand).multiplyScalar(0.75 + 0.25 * smooth(-30, 0, h - SEA)); return; }
+      if ((c < 18 || h < SEA + 1.4) && z > 470 && isleU(x, z) >= c - 0.01) { out.copy(GC.sand).lerp(GC.grav1, sp * 0.3).multiplyScalar(1.15); if (h < SEA + 0.6) out.lerp(GC.wet, 0.4); return; }   // M Island's sand
       if (c < 18 || h < SEA + 1.4) { out.copy(GC.grav1).lerp(GC.grav2, sp); if (h < SEA + 0.6) out.lerp(GC.wet, 0.6); return; }
       out.copy(GC.g1).lerp(GC.g2, nz * 0.7).lerp(GC.g3, (1 - nz) * 0.4).lerp(GC.dry, smooth(150, 300, r) * 0.25);
       if (c < 30) out.lerp(GC.grav1, smooth(30, 18, c));
@@ -2049,15 +2102,16 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     const waterY = (x, z) => SEA + waveH(x, z);
     function makeWater() {
       const isl = ISLANDS.map(I => new THREE.Vector3(I.x, I.z, I.R));
+      const ISLE_VT = renderer.capabilities.maxVertexTextures > 0, IW = isleWaterTex();   // the shore of M Island, for the waves and the shallows
       const glsl = `
-        uniform float time; uniform vec3 isl[3];
+        uniform float time; uniform vec3 isl[3]; uniform sampler2D isleT; uniform vec4 isleB;
         float shoreR(float a){ return 470.0 + 26.0*sin(a*3.0+1.0) + 16.0*sin(a*7.0+2.0) + 9.0*cos(a*11.0); }
-        float coastD(vec2 p){ float c = length(p) - shoreR(atan(p.x, p.y)); for (int i = 0; i < 3; i++) c = min(c, length(p - isl[i].xy) - isl[i].z); return c; }
+        float coastD(vec2 p){ float c = length(p) - shoreR(atan(p.x, p.y)); for (int i = 0; i < 3; i++) c = min(c, length(p - isl[i].xy) - isl[i].z);${ISLE_VT ? ' vec2 iu = (p - isleB.xy) / isleB.zw; if (iu.x > 0.0 && iu.y > 0.0 && iu.x < 1.0 && iu.y < 1.0) c = min(c, 128.0 - texture2D(isleT, iu).r * 255.0);' : ''} return c; }
         float amp(float c){ return 0.35 + 0.65 * smoothstep(0.0, 80.0, c); }
       `;
       const mat = new THREE.ShaderMaterial({
         uniforms: {
-          time: { value: 0 }, isl: { value: isl }, uSnap: SNAP,
+          time: { value: 0 }, isl: { value: isl }, isleT: { value: IW.t }, isleB: { value: IW.b }, uSnap: SNAP,
           sunDir: { value: new THREE.Vector3(35, 14, -95).normalize() },
           deep: { value: new THREE.Color(0x1f5f80) }, shallow: { value: new THREE.Color(0x3fb3b0) }, horizon: { value: new THREE.Color(0xe9c9b6) },
           fogColor: { value: scene.fog.color }, fogNear: { value: scene.fog.near }, fogFar: { value: scene.fog.far }
@@ -2104,6 +2158,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       if (!water) return;
       waterT += dt; water.material.uniforms.time.value = waterT;
       water.position.set(Math.round(cam.position.x / 16) * 16, 0, Math.round(cam.position.z / 16) * 16);
+      updateIsle(dt);
     }
 
     // ---- shore surf: a band of foam that breathes in and out along the waterline
@@ -3180,33 +3235,216 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       for (const p of ps) { if (Math.abs(p.lat) > p.hw + 10) continue; if (p.type !== 'T' || heightAt(x, z) < p.deck + p.H + 6) return true; }
       return false;
     }
-    // ---- the peninsula's dirt tracks: ribbons of worn dirt draped over the ground (jumps and berms included)
+    // ======================= Building M Island =======================
+    // (called buildPeninsula for history) its ground, the dirt track, the buoys round the wave race and the wooden loop
+    let ISLE_VIS = [], ISLE_FR = 0, BUOYS = null;
+    const LOOPS = [];
     function buildPeninsula(toon) {
+      isleFinalize(); buildIsleGround(); buildTrackRibbon(toon); buildBuoys(toon); buildLoops(toon);
+    }
+    // the lap's stretches settled against the real ground: dirt that runs out over the sea is water, water that runs up the beach is dirt
+    function isleFinalize() {
+      const T = TRACK;
+      for (let i = 0; i < T.X.length; i++) {
+        if (T.KD[i] === 1) continue;
+        const h = heightA(T.X[i], T.Z[i]), jump = T.prof[T.PI[i]][T.SI[i] * 4] > 0.01;
+        if (T.KD[i] === 0 && h < SEA + 0.2 && !jump) T.KD[i] = 2;
+        else if (T.KD[i] === 2 && h > SEA + 0.6) T.KD[i] = 0;
+      }
+    }
+    const isleShow = (m, x, z, r) => { ISLE_VIS.push({ m, x, z, r }); scene.add(m); };
+    // the island's ground: a grid that carries on from the main one (same cell size and lines, so they meet without cracks),
+    // cut into tiles; tiles only draw near you (most of the island is beyond the fog anyway)
+    function buildIsleGround() {
+      const cell = 1900 / 320, nx = 390, nz = 308, x0 = -950 - 60 * cell, z0 = 950, n1 = nx + 1, H = new Float32Array(n1 * (nz + 1));
+      for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const x = x0 + i * cell, z = z0 + j * cell; H[i + n1 * j] = isleU(x, z) > -60 ? heightA(x, z) : SEA - 30; }
+      IGRID = { x0, z0, cell, nx, nz, h: H };
+      const tmp = new THREE.Color(), TS = 40;
+      for (let tz = 0; tz < nz; tz += TS) for (let tx = 0; tx < nx; tx += TS) {
+        const ex = Math.min(TS, nx - tx), ez = Math.min(TS, nz - tz), c1 = ex + 1, I = [];
+        for (let j = 0; j < ez; j++) for (let i = 0; i < ex; i++) {
+          const k = tx + i + n1 * (tz + j);
+          if (Math.max(H[k], H[k + 1], H[k + n1], H[k + n1 + 1]) < SEA - 1) continue;   // under the sea: never seen
+          const a = i + c1 * j, b = a + c1; I.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+        if (!I.length) continue;
+        const P = [], C = [], Nn = [], UV = [];
+        for (let j = 0; j <= ez; j++) for (let i = 0; i <= ex; i++) {
+          const gi = tx + i, gj = tz + j, x = x0 + gi * cell, z = z0 + gj * cell, h = H[gi + n1 * gj];
+          P.push(x, h, z); UV.push((x + 950) / 1900, (950 - z) / 1900);
+          const hx = (H[Math.min(nx, gi + 1) + n1 * gj] - H[Math.max(0, gi - 1) + n1 * gj]) / (2 * cell), hz = (H[gi + n1 * Math.min(nz, gj + 1)] - H[gi + n1 * Math.max(0, gj - 1)]) / (2 * cell), l = Math.hypot(hx, 1, hz);
+          Nn.push(-hx / l, 1 / l, -hz / l);
+          groundColor(x, z, h, tmp); C.push(tmp.r, tmp.g, tmp.b);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I);
+        g.computeBoundingSphere();
+        isleShow(new THREE.Mesh(g, GROUND.mat), g.boundingSphere.center.x, g.boundingSphere.center.z, g.boundingSphere.radius);
+      }
+    }
+    // the dirt tracks: ribbons of worn dirt draped over the ground (jumps and berms included), in short pieces
+    function buildTrackRibbon(toon) {
       const T = TRACK, tmp = new THREE.Color(), grass = new THREE.Color();
       const DIRT = new THREE.Color(0x8a6a48), DIRT2 = new THREE.Color(0x6c5036), DUST = new THREE.Color(0xa58663);
       const nz = (x, z) => 0.5 + 0.5 * Math.sin(x * 0.37 + Math.sin(z * 0.23) * 2) * Math.cos(z * 0.31 - x * 0.11);
       const mat = toon(0xffffff, { vertexColors: true, map: PS1TEX.detail, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
-      T.paths.forEach(pa => {
-        const P = [], C = [], UV = [], I = [], W = 13, rows = pa.closed ? pa.N : pa.N - 1;
-        for (let r = 0; r <= rows; r++) {
-          const i = pa.base + (pa.closed ? r % pa.N : r), R = 1 / Math.max(1e-4, Math.abs(T.KS[i])), inside = T.KS[i] > 0 ? 1 : -1;
-          for (let j = -W; j <= W; j++) {
-            let l = j; if (Math.sign(l) === inside && Math.abs(l) > R * 0.8) l = Math.sign(l) * R * 0.8;
-            const x = T.X[i] + l * T.TZ[i], z = T.Z[i] - l * T.TX[i], y = heightAt(x, z);
-            P.push(x, y + 0.06, z); UV.push(j / 4, r / 4);
-            const a = Math.abs(j), n = nz(x, z), edge = T.HW - 1.2 + 3 * nz(z * 0.7, x * 0.7);   // ragged, grown-over edges
-            tmp.copy(DIRT).lerp(DIRT2, n * 0.45 + (Math.abs(a - 1.0) < 0.6 ? 0.35 : 0) + (Math.abs(a - 4.2) < 0.6 ? 0.3 : 0)).lerp(DUST, (1 - n) * 0.25);
-            groundColor(x, z, y - trackExtra(x, z), grass);
-            if (a > edge) tmp.lerp(grass, smooth(edge, edge + 2.5, a));
-            if (!pa.closed && r < 3) tmp.lerp(grass, 1 - r / 3);
-            C.push(tmp.r, tmp.g, tmp.b);
+      const NC = 10, cols = 2 * NC + 1;
+      T.paths.forEach((pa, pid) => {
+        const N = pa.N, pr = T.prof[pid], land = k => T.KD[pa.base + k] === 0;
+        const alongAt = k => pr[Math.max(0, k) * 4] || 0, bankAt = k => clamp((Math.abs(T.KS[pa.base + k]) - 1 / 130) * 90, 0, 1);
+        let start = 0; if (pa.closed) { while (start < N && land(start)) start++; if (start >= N) start = 0; }
+        let rows = [];
+        const flush = () => {
+          if (rows.length >= 2) {
+            const P = [], C = [], UV = [], I = [];
+            rows.forEach((k, r) => {
+              const i = pa.base + k, along = alongAt(k), bank = bankAt(k), sh = Math.max(T.SH, along * 1.1);
+              const Wr = T.HW + Math.max(sh, bank > 0 ? T.BERM + 4 : 0) + 1.5, Rr = 1 / Math.max(1e-4, Math.abs(T.KS[i])), inside = T.KS[i] > 0 ? 1 : -1;
+              for (let j = -NC; j <= NC; j++) {
+                let l = j / NC * Wr; if (Math.sign(l) === inside && Math.abs(l) > Rr * 0.8) l = Math.sign(l) * Rr * 0.8;
+                const x = T.X[i] + l * T.TZ[i], z = T.Z[i] - l * T.TX[i], y = heightAt(x, z);
+                P.push(x, y + 0.06, z); UV.push(l / 4, k / 4);
+                const a = Math.abs(l), n = nz(x, z), edge = T.HW - 1.2 + 3 * nz(z * 0.7, x * 0.7) + (along > 0.8 ? Wr : 0) + bank * (T.BERM + 4);
+                tmp.copy(DIRT).lerp(DIRT2, n * 0.45 + (Math.abs(a - 1.4) < 0.7 ? 0.35 : 0) + (Math.abs(a - 5.2) < 0.7 ? 0.3 : 0)).lerp(DUST, (1 - n) * 0.25);
+                groundColor(x, z, y - trackExtra(x, z), grass);
+                if (a > edge) tmp.lerp(grass, smooth(edge, edge + 2.5, a));
+                if (!pa.closed && k < 3) tmp.lerp(grass, 1 - k / 3);
+                C.push(tmp.r, tmp.g, tmp.b);
+              }
+            });
+            for (let r = 0; r + 1 < rows.length; r++) for (let j = 0; j < cols - 1; j++) { const a = r * cols + j, b = (r + 1) * cols + j; I.push(a, b, a + 1, b, b + 1, a + 1); }
+            const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals(); g.computeBoundingSphere();
+            isleShow(new THREE.Mesh(g, mat), g.boundingSphere.center.x, g.boundingSphere.center.z, g.boundingSphere.radius);
           }
+          rows = rows.length ? [rows[rows.length - 1]] : [];
+        };
+        for (let c = 0; c <= N; c++) {
+          const k = pa.closed ? (start + c) % N : Math.min(c, N - 1);
+          if (!land(k)) { flush(); rows = []; continue; }
+          const busy = alongAt(k) > 0.02 || alongAt(k + 2) > 0.02 || alongAt(k - 2) > 0.02 || bankAt(k) > 0;
+          if (rows.length && !busy && c % 2 && c < N) continue;   // every 2 m on plain stretches, every metre on jumps and berms
+          if (!rows.length || rows[rows.length - 1] !== k) rows.push(k);
+          if (rows.length >= 120) flush();
+          if (!pa.closed && c >= N - 1) break;
         }
-        const cols = 2 * W + 1;
-        for (let r = 0; r < rows; r++) for (let j = 0; j < cols - 1; j++) { const a = r * cols + j, b = (r + 1) * cols + j; I.push(a, b, a + 1, b, b + 1, a + 1); }
-        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals();
-        scene.add(new THREE.Mesh(g, mat));
+        flush();
       });
+    }
+    // buoys round the wave race: a yellow buoy each side of the lane every 30 m, bobbing on the swell
+    function buildBuoys(toon) {
+      const T = TRACK, pa = T.paths[0], list = []; let run = 0;
+      for (let k = 0; k < pa.N; k++) {
+        const i = pa.base + k; if (T.KD[i] !== 2) { run = 0; continue; }
+        if (run++ % 30 !== 12) continue;
+        for (const sd of [-1, 1]) list.push([T.X[i] + sd * (T.HW + 4) * T.TZ[i], T.Z[i] - sd * (T.HW + 4) * T.TX[i], Math.random() * 6]);
+      }
+      const body = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.55, 0.85, 1.5, 8), toon(0xffd23f), list.length);
+      const cap = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 0.7, 8), toon(0xff6a2a), list.length);
+      body.frustumCulled = cap.frustumCulled = false; scene.add(body); scene.add(cap);
+      BUOYS = { list, body, cap, m4: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), p: new THREE.Vector3(), s: new THREE.Vector3(1, 1, 1), up: new THREE.Vector3() };
+      updateBuoys();
+    }
+    function updateBuoys() {
+      const B = BUOYS; if (!B) return;
+      B.list.forEach(([x, z, ph], n) => {
+        const y = waterY(x, z); B.e.set(0.12 * Math.sin(waterT * 1.3 + ph), 0, 0.12 * Math.cos(waterT * 1.1 + ph)); B.q.setFromEuler(B.e);
+        B.m4.compose(B.p.set(x, y + 0.35, z), B.q, B.s); B.body.setMatrixAt(n, B.m4);
+        B.up.set(0, 1.1, 0).applyQuaternion(B.q); B.m4.compose(B.p.set(x + B.up.x, y + 0.35 + B.up.y, z + B.up.z), B.q, B.s); B.cap.setMatrixAt(n, B.m4);
+      });
+      B.body.instanceMatrix.needsUpdate = true; B.cap.instanceMatrix.needsUpdate = true;
+    }
+    // the wooden loop-the-loop: a 9 m radius ring of planks standing on the track, its lane stepping 10 m sideways on the
+    // way round (so the way out misses the way in), hung in a timber frame
+    function buildLoops(toon) {
+      const T = TRACK, pa = T.paths[0];
+      const tex = PS1TEX.detail, plank = new THREE.Color(0xb07a45), plank2 = new THREE.Color(0x8d5f33), tmp = new THREE.Color();
+      for (const L0 of pa.loops) {
+        const i = pa.base + L0.s, F = [T.TX[i], 0, T.TZ[i]], Lv = [T.TZ[i], 0, -T.TX[i]];
+        const B = [T.X[i], heightAt(T.X[i], T.Z[i]), T.Z[i]], R = 9, lane0 = -5, shift = 10, hw = 3.6;
+        const L = { B, F, L: Lv, R, lane0, shift, hw }; LOOPS.push(L);
+        const at = (phi, lat, up) => {   // a point on (or off, along its inward normal) the plank surface
+          const s = Math.sin(phi), c = Math.cos(phi), cl = lane0 + shift * phi / (Math.PI * 2) + lat;
+          return [B[0] + F[0] * R * s + Lv[0] * cl + (-F[0] * s) * up, B[1] + R * (1 - c) + c * up, B[2] + F[2] * R * s + Lv[2] * cl + (-F[2] * s) * up];
+        };
+        const SEG = 120, P = [], C = [], UV = [], I = [];
+        const strip = (lats, up, col) => {   // a strip round the whole loop through the given cross-section points
+          const base = P.length / 3, nc = lats.length;
+          for (let g = 0; g <= SEG; g++) {
+            const phi = Math.PI * 2 * g / SEG;
+            lats.forEach(([lt, u]) => { P.push(...at(phi, lt, up + u)); UV.push(lt / 2, g / 3); tmp.copy(col(g)); C.push(tmp.r, tmp.g, tmp.b); });
+          }
+          for (let g = 0; g < SEG; g++) for (let j = 0; j < nc - 1; j++) { const a = base + g * nc + j, b = a + nc; I.push(a, b, a + 1, b, b + 1, a + 1); }
+        };
+        strip([[-hw, 0], [-hw / 2, 0], [0, 0], [hw / 2, 0], [hw, 0]], 0.14, g => g % 2 ? plank : plank2);             // the deck
+        strip([[-hw, 0], [hw, 0]], -0.2, () => plank2);                                                                 // its underside
+        for (const sd of [-1, 1]) strip([[sd * hw, 0], [sd * (hw + 0.1), 0.75], [sd * (hw + 0.25), 0.75], [sd * (hw + 0.25), -0.2]], 0.14, () => plank2);   // side rails
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals();
+        const deck = new THREE.Mesh(g, toon(0xffffff, { vertexColors: true, map: tex, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 })); scene.add(deck);
+        // the frame: a timber tower each side, a beam over the top, hangers down to the ring, braces
+        const wood = toon(0x8d5f33), beam = (a, b, t) => {
+          const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), len = d.length();
+          const m = new THREE.Mesh(new THREE.BoxGeometry(t, len, t), wood); m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); scene.add(m);
+        };
+        const pt = (al, lat, y) => [B[0] + F[0] * al + Lv[0] * lat, y, B[2] + F[2] * al + Lv[2] * lat];
+        const latL = lane0 - hw - 1.4, latR = lane0 + shift + hw + 1.4, top = B[1] + 2 * R + 1.2;
+        for (const lat of [latL, latR]) for (const al of [-R * 0.75, R * 0.75]) { const gy = heightAt(pt(al, lat, 0)[0], pt(al, lat, 0)[2]); beam(pt(al, lat, gy - 0.5), pt(al, lat, top), 0.55); }
+        for (const lat of [latL, latR]) { beam(pt(-R * 0.75, lat, top), pt(R * 0.75, lat, top), 0.5); beam(pt(-R * 0.75, lat, B[1] + R * 0.6), pt(R * 0.75, lat, B[1] + R * 1.5), 0.32); beam(pt(R * 0.75, lat, B[1] + R * 0.6), pt(-R * 0.75, lat, B[1] + R * 1.5), 0.32); }
+        for (const al of [-R * 0.45, 0, R * 0.45]) beam(pt(al, latL, top), pt(al, latR, top), 0.5);
+        for (const al of [-R * 0.45, 0, R * 0.45]) { const phi = Math.PI + Math.asin(clamp(-al / R, -1, 1)) * 1; const p = at(phi, 0, -0.2); beam([p[0], p[1], p[2]], [p[0], top, p[2]], 0.22); }
+      }
+    }
+    // riding the loop: hit its foot square and fast enough and you're carried right round it (energy kept, gravity
+    // taken off going up); too slow and you drop off wherever the ring can't hold you any more
+    const _lpM = new THREE.Matrix4(), _lpQ = new THREE.Quaternion(), _lpX = new THREE.Vector3(), _lpY = new THREE.Vector3(), _lpZ = new THREE.Vector3();
+    function loopQ(fw, up) {   // the car's orientation with its nose along fw and its roof along up
+      const r = rCross(fw, up); _lpM.makeBasis(_lpX.set(r[0], r[1], r[2]), _lpY.set(up[0], up[1], up[2]), _lpZ.set(-fw[0], -fw[1], -fw[2]));
+      _lpQ.setFromRotationMatrix(_lpM); return [_lpQ.x, _lpQ.y, _lpQ.z, _lpQ.w];
+    }
+    function loopRide(S, dt) {
+      if (!LOOPS.length) return false;
+      let R = S.loopRide;
+      if (!R) {
+        if (S.mir) return false;
+        const vh = Math.hypot(S.v[0], S.v[2]); if (vh < 8) return false;
+        for (const L of LOOPS) {
+          const dx = S.p[0] - L.B[0], dy = S.p[1] - L.B[1], dz = S.p[2] - L.B[2], al = dx * L.F[0] + dz * L.F[2], lat = dx * L.L[0] + dz * L.L[2];
+          if (al < -3 || al > 0.6 || Math.abs(lat - L.lane0) > L.hw - 0.4 || dy > 2.6 || dy < -1) continue;
+          const vf = S.v[0] * L.F[0] + S.v[2] * L.F[2]; if (vf < 8 || vf < vh * 0.8) continue;
+          R = S.loopRide = { L, phi: 0, E: vf * vf, off: lat - L.lane0, h0: clamp(dy, 0.4, 1.8) };
+          break;
+        }
+        if (!R) return false;
+      }
+      const L = R.L, g = RC.g, TAU = Math.PI * 2;
+      R.E *= 1 - 0.03 * dt;
+      const vAt = p => Math.sqrt(Math.max(0, R.E - 2 * g * L.R * (1 - Math.cos(p))));
+      let v = vAt(R.phi); R.phi = Math.min(TAU, R.phi + Math.max(v, 1) * dt / L.R); v = vAt(R.phi);
+      const p = R.phi, s = Math.sin(p), c = Math.cos(p), F = L.F, Lv = L.L;
+      const n = [-F[0] * s, c, -F[2] * s], t = [F[0] * c, s, F[2] * c], cl = L.lane0 + R.off + L.shift * p / TAU;
+      S.p = [L.B[0] + F[0] * L.R * s + Lv[0] * cl + n[0] * R.h0, L.B[1] + L.R * (1 - c) + n[1] * R.h0, L.B[2] + F[2] * L.R * s + Lv[2] * cl + n[2] * R.h0];
+      const side = L.shift / (TAU * L.R) * v;
+      if (p >= TAU) {   // out the bottom: back on the track, straight on
+        S.v = [F[0] * v + Lv[0] * side, 0, F[2] * v + Lv[2] * side]; S.q = loopQ(F, [0, 1, 0]); S.w = [0, 0, 0]; S.loopRide = null; return true;
+      }
+      S.v = [t[0] * v + Lv[0] * side, t[1] * v, t[2] * v + Lv[2] * side]; S.q = loopQ(t, n);
+      const rt = rCross(t, n); S.w = [rt[0] * v / L.R, rt[1] * v / L.R, rt[2] * v / L.R];
+      if (v * v / L.R + g * c < 0 || v < 1.5) S.loopRide = null;   // the ring can't hold you: you fall off from here
+      return true;
+    }
+    // M Island's shore for the sea shader: metres inside the shore + 128, one byte per 8 m
+    function isleWaterTex() {
+      const I = ISLE, C = 8, w = Math.floor(I.nx * I.C / C), h = Math.floor(I.nz * I.C / C), d = new Uint8Array(w * h);
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) d[i + w * j] = clamp(Math.round(128 + isleU(I.x0 + (i + 0.5) * C, I.z0 + (j + 0.5) * C)), 0, 255);
+      const t = new THREE.DataTexture(d, w, h, THREE.LuminanceFormat, THREE.UnsignedByteType); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+      return { t, b: new THREE.Vector4(I.x0, I.z0, w * C, h * C) };
+    }
+    // every frame: island pieces show only near you; the buoys bob
+    function updateIsle(dt) {
+      if (typeof cam === 'undefined' || !cam) return;
+      if (ISLE_FR++ % 8 === 0) { const far = (scene.fog ? scene.fog.far : 400) + 120, cx = cam.position.x, cz = cam.position.z; for (const o of ISLE_VIS) o.m.visible = Math.hypot(o.x - cx, o.z - cz) - o.r < far; }
+      if (BUOYS && ISLE_FR % 2 === 0) updateBuoys();
     }
     function buildWorld(toon) {
       const r0 = shoreR(PASS_A) - 4, out = new THREE.Vector3(Math.sin(PASS_A), 0, Math.cos(PASS_A)), side = new THREE.Vector3(out.z, 0, -out.x);
@@ -9141,7 +9379,7 @@ bool inVoid(vec3 p) {
       }
       if (S.mir) { const t0 = thr; thr = brk; brk = t0; steer = -steer; }
       K.brakeLit = K.on && (brk > 0.08 || brkB);   // (stays lit standing still too)   // turned round: left trigger drives, right trigger brakes
-      if (S.sleep) { S.v = [0, 0, 0]; S.w = [0, 0, 0]; S.om = [0, 0, 0, 0]; } else
+      if (S.sleep) { S.v = [0, 0, 0]; S.w = [0, 0, 0]; S.om = [0, 0, 0, 0]; } else if (!loopRide(S, dt))   // (the wooden loop carries you round itself)
       rcStep(S, { pitchIn: K.pitchIn, throttle: thr, brake: brk, brakeB: brkB, steer, turbo: K.turbo, boostX: (K.boostFx || 0) > 0 ? 1 + RC.driftBoost / (RC.w0 * RC.r) * 1.15 : 1 }, dt, rcEnv);
       if (S.esc.mode === 'rev') rcMirror(S);
       rcKnock = 0; truckSweep(prev, S); rcCollide(S, prev);
