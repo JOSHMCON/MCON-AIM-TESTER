@@ -1246,6 +1246,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       }
       ECHO.e += (ECHO.tgt - ECHO.e) * (1 - Math.exp(-dt / (ECHO.tgt > ECHO.e ? 0.25 : 0.7)));   // in quickly, out slowly
       ECHO.send.gain.setTargetAtTime(ECHO.e * 0.9, actx.currentTime, 0.05);
+      if (amb) amb.fw.gain.setTargetAtTime(Math.pow(1 - FOREST, 2), actx.currentTime, 0.3);   // the breeze dies away in the woods: deep in, it's still
     }
     function audio() { try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (_) {} }
     // all game sound goes quiet the moment the page is hidden or closed, and comes back when it's shown again
@@ -1278,8 +1279,9 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         const wind = noise(); wind.loop = true;
         const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
         const wg = actx.createGain(); wg.gain.value = 0.018;
-        wind.connect(lp); lp.connect(wg); wg.connect(master); wind.start();
-        amb = { master, wind, wg, lp, timers: [] };
+        const fw = actx.createGain(); fw.gain.value = Math.pow(1 - FOREST, 2);   // (fw: the forest stills the wind)
+        wind.connect(lp); lp.connect(wg); wg.connect(fw); fw.connect(master); wind.start();
+        amb = { master, wind, wg, fw, lp, timers: [] };
         const gust = () => { if (!amb) return; const t0 = actx.currentTime; wg.gain.setTargetAtTime(0.008 + Math.random() * 0.022, t0, 1.6); lp.frequency.setTargetAtTime(300 + Math.random() * 380, t0, 1.6); amb.timers.push(setTimeout(gust, 2500 + Math.random() * 4000)); };
         const chirps = () => {
           if (!amb) return;
@@ -1364,6 +1366,12 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     }
     const trailA = r => PASS_A + 0.05 * Math.sin(r * 0.018) + 0.03 * Math.sin(r * 0.047 + 1);
     const trailLat = (x, z) => { const r = Math.hypot(x, z); return r * angDiff(Math.atan2(x, z), trailA(r)); };
+    // how deep in the forest a spot is (0: open meadow, 1: deep woods). It closes in from the foothills up to the mountains,
+    // with a wavy edge, opens out through the pass, and stops short of the shore
+    function forestAt(x, z) {
+      const r = Math.hypot(x, z), a = Math.atan2(x, z), wob = 18 * Math.sin(a * 5 + 0.7) + 10 * Math.sin(a * 11 + 2.1) + 6 * Math.sin(a * 23 + 1.3);
+      return smooth(150, 250, r + wob) * (1 - smooth(395, 435, r)) * (0.3 + 0.7 * smooth(0.06, 0.26, Math.abs(angDiff(a, PASS_A))));
+    }
     // ======================= The tunnel and the peninsula =======================
     // A plain road tunnel runs straight through the ridge behind the lake house. It comes out high above the north
     // beach, where a big dirt kicker launches you down the hill onto a wide peninsula with an old dirt rally track.
@@ -2023,6 +2031,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       if (c < 18 || h < SEA + 1.4) { out.copy(GC.grav1).lerp(GC.grav2, sp); if (h < SEA + 0.6) out.lerp(GC.wet, 0.6); return; }
       out.copy(GC.g1).lerp(GC.g2, nz * 0.7).lerp(GC.g3, (1 - nz) * 0.4).lerp(GC.dry, smooth(150, 300, r) * 0.25);
       if (c < 30) out.lerp(GC.grav1, smooth(30, 18, c));
+      { const ff = forestAt(x, z); if (ff > 0) out.lerp(groundColor.ff || (groundColor.ff = new THREE.Color(0x2c4424)), ff * 0.45); }   // the forest floor: darker, mossier
       const rk = Math.max(smooth(0.55, 0.95, slope), smooth(70, 95, h));
       if (rk > 0) out.lerp(sp > 0.5 ? GC.rock1 : GC.rock2, rk);
       if (h > 100) out.lerp(GC.snow, smooth(100, 112, h) * (slope < 1.3 ? 1 : 0.6));
@@ -3304,6 +3313,16 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       return { dockEnd: at(DL - 3, 3.4), dockYaw, out };
     }
     let FOG0 = null, caveFog = 0; const CAVE_FOG = new THREE.Color(0x3a3f48);
+    // ---- in the forest: the deeper in you are (and the lower, under the canopy) the closer a cool green mist comes in,
+    // and the stiller it gets (the breeze dies away under the trees, and there are no long echoes)
+    let FOREST = 0; const FOREST_FOG = new THREE.Color(0x93a493);
+    function forestUpdate(dt) {
+      if (!FOG0 || !cam) return;
+      const p = cam.position, g = heightAt(p.x, p.z), tgt = forestAt(p.x, p.z) * (1 - smooth(30, 80, p.y - g)) * (1 - smooth(85, 115, g));
+      FOREST += (tgt - FOREST) * Math.min(1, dt * 0.8);
+      scene.fog.near = FOG0.n + (2 - FOG0.n) * FOREST; scene.fog.far = FOG0.f + (125 - FOG0.f) * FOREST;
+      if (!SN) scene.fog.color.copy(FOG0.c).lerp(FOREST_FOG, FOREST * 0.8);   // (the end-of-the-world sequence owns the colour while it plays)
+    }
     function updateWorld(dt) {
       if (!K.on && (rcA || rcAll.length)) rcAudioStop();
       snUpdate(dt);
@@ -3314,6 +3333,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         caveFog += (inC - caveFog) * Math.min(1, dt * 2.5);
         TFOGU.uTFogA.value = caveFog;   // only the tunnel surfaces darken with distance; the sky, hills and sea stay as they are
       }
+      forestUpdate(dt);
       if (beam) beam.rotation.y += dt * 0.8;
       for (const R of ramps) { R.g.position.y = SEA + waveH(R.x, R.z) * 0.5; }
     }
@@ -3554,6 +3574,41 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         }
       });
       T.flame.wrapS = THREE.ClampToEdgeWrapping; T.flame.repeat.set(0.25, 1);
+      // ---- flattened details: railings as one see-through panel of painted spindles, and each door baked into one texture
+      T.rails = mk(16, 8, (c, w, h) => { c.fillStyle = '#f1eee6'; c.fillRect(6, 0, 4, h); c.fillStyle = '#cfcabd'; c.fillRect(9, 0, 1, h); c.fillStyle = '#fbfaf5'; c.fillRect(6, 0, 1, h); });
+      T.doorB = mk(48, 96, (c, w, h) => {   // the front door: teal planks, two raised panels, strap hinges, porthole, knob, kick plate (1.17 x 2.3 m)
+        const X = x => Math.round(x / 1.17 * w), Y = y => Math.round((1 - y / 2.3) * h);
+        for (let x = 0; x < w; x += 8) { c.fillStyle = x % 16 ? '#2f7a74' : '#2a6f69'; c.fillRect(x, 0, 8, h); c.fillStyle = '#1b4a46'; c.fillRect(x, 0, 1, h); c.fillStyle = '#3d8c85'; c.fillRect(x + 1, 0, 1, h); }
+        speck(c, w, h, ['#357f78', '#26645f'], 60);
+        for (const px of [0.32, 0.85]) { const x0 = X(px - 0.17), x1 = X(px + 0.17), y0 = Y(1.025), y1 = Y(0.275); c.fillStyle = '#1b4a46'; c.fillRect(x0, y0, x1 - x0, y1 - y0); c.fillStyle = '#3d8c85'; c.fillRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2); c.fillStyle = '#2f7a74'; c.fillRect(x0 + 2, y0 + 2, x1 - x0 - 3, y1 - y0 - 3); }
+        c.fillStyle = '#2c2b2e'; for (const [py, len] of [[0.35, 0.75], [1.35, 0.7]]) { c.fillRect(X(0.02), Y(py) - 1, X(len), 3); c.fillRect(X(0.02 + len) - 2, Y(py) - 2, 3, 5); }
+        c.fillStyle = '#c9a243'; c.beginPath(); c.arc(X(0.585), Y(1.62), X(0.21), 0, 7); c.fill();
+        c.fillStyle = '#c9a243'; c.fillRect(X(1.02) - 2, Y(1.0) - 2, 4, 4); c.fillStyle = '#2c2b2e'; c.fillRect(X(1.02) - 1, Y(0.88) - 1, 1, 3);
+        c.fillStyle = '#c9a243'; c.fillRect(X(0.035), Y(0.14), X(1.1), Y(0.02) - Y(0.14)); c.fillStyle = '#e3c46a'; c.fillRect(X(0.035), Y(0.14), X(1.1), 1);
+      });
+      T.deckDoorB = mk(48, 96, (c, w, h) => {   // the deck door: white frame, six panes cut out (its sheet of glass shows through), two small panels, knob (1.17 x 2.22 m)
+        const X = x => Math.round(x / 1.17 * w), Y = y => Math.round((1 - y / 2.22) * h);
+        c.fillStyle = '#f1eee6'; c.fillRect(0, 0, w, h); c.fillStyle = '#d4d0c6'; c.fillRect(0, 0, 1, h); c.fillRect(w - 1, 0, 1, h); c.fillRect(0, h - 1, w, 1);
+        const gx0 = X(0.12), gx1 = X(1.05), gy0 = Y(2.1), gy1 = Y(0.96);
+        c.clearRect(gx0, gy0, gx1 - gx0, gy1 - gy0);
+        c.fillStyle = '#f1eee6'; for (const f of [1 / 3, 2 / 3]) c.fillRect(X(1.17 * f) - 1, gy0, 2, gy1 - gy0); c.fillRect(gx0, Math.round((gy0 + gy1) / 2) - 1, gx1 - gx0, 2);
+        c.fillStyle = '#cfcabd'; c.fillRect(gx0 - 1, gy0 - 1, gx1 - gx0 + 2, 1); c.fillRect(gx0 - 1, gy0, 1, gy1 - gy0);
+        for (const px of [0.335, 0.835]) { c.fillStyle = '#d4d0c6'; c.fillRect(X(px - 0.1), Y(0.28), X(0.2), Y(0.08) - Y(0.28)); c.fillStyle = '#fbfaf5'; c.fillRect(X(px - 0.1) + 1, Y(0.28) + 1, X(0.2) - 2, Y(0.08) - Y(0.28) - 2); }
+        c.fillStyle = '#d4d0c6'; c.fillRect(0, Y(0.96), w, 1); c.fillRect(0, Y(0.88), w, 1);
+        c.fillStyle = '#c9a243'; c.fillRect(X(1.05) - 2, Y(1.0) - 2, 3, 3);
+      });
+      T.gdoorB = mk(144, 80, (c, w, h) => {   // the sectional garage door: four sections, eight panels each, a row of six windows on top, handle, lock, hinges, seal
+        c.fillStyle = '#e9e6de'; c.fillRect(0, 0, w, h); const sec = h / 4;
+        for (let k = 0; k < 4; k++) { const y0 = Math.round(k * sec);
+          c.fillStyle = '#b9b5ab'; c.fillRect(0, y0, w, 1); c.fillStyle = '#f7f5ef'; c.fillRect(0, y0 + 1, w, 1);
+          if (k) for (let i = 0; i < 8; i++) { const x0 = Math.round(i * w / 8) + 2, x1 = Math.round((i + 1) * w / 8) - 2, a = y0 + 4, b = Math.round(y0 + sec) - 3;
+            c.fillStyle = '#c9c5bb'; c.fillRect(x0, a, x1 - x0, 1); c.fillRect(x0, a, 1, b - a); c.fillStyle = '#f7f5ef'; c.fillRect(x0, b, x1 - x0, 1); c.fillRect(x1 - 1, a, 1, b - a); }
+          if (k) for (const hx of [6, w / 2, w - 6]) { c.fillStyle = '#5a585c'; c.fillRect(hx - 2, y0 - 1, 4, 3); }
+        }
+        for (let i = 0; i < 6; i++) { const cx = Math.round((i + 0.5) * w / 6); c.fillStyle = '#9a968d'; c.fillRect(cx - 9, 5, 18, 10); c.fillStyle = '#55707e'; c.fillRect(cx - 8, 6, 16, 8); c.fillStyle = '#86a2ad'; c.fillRect(cx - 7, 7, 5, 1); }
+        c.fillStyle = '#2c2b2e'; c.fillRect(w / 2 - 6, h - 15, 12, 2); c.fillStyle = '#c9a243'; c.fillRect(w / 2 - 1, h - 21, 2, 2);
+        c.fillStyle = '#1d1d1f'; c.fillRect(0, h - 2, w, 2);
+      });
       return T;
     }
 
@@ -3768,6 +3823,7 @@ function buildPriusModel(THREE, options) {
       reg('soil', toonC(0x4a3424)); reg('leaf', toonC(0x3f7a3a)); reg('flowerR', toonC(0xd8462c)); reg('flowerP', toonC(0xe86a9a)); reg('flowerY', toonC(0xf2c84a));
       reg('bookA', toonC(0x8a2e2a)); reg('bookB', toonC(0x2e4a6a)); reg('bookC', toonC(0x3f6b3a)); reg('bookD', toonC(0xc9a243));
       reg('ceramic', toonC(0xe8e2d6)); reg('sink', toonC(0x8e9399));
+      { const rm = M(0, T2.rails); rm.alphaTest = 0.5; reg('rails', rm, 0.14); }   // a run of spindles: one flat cut-out panel (one spindle every 14 cm)
       reg('glass', basic({ color: 0x9fc4d6, transparent: true, opacity: 0.22, depthWrite: false }, true));
       reg('glassLit', basic({ color: 0xffd38a, transparent: true, opacity: 0.42, depthWrite: false }, true));
       reg('emis', basic({ color: 0xffe2a8 }, true)); reg('emisCool', basic({ color: 0xeef4ff }, true)); reg('ember', basic({ color: 0xff7a26 }, true));
@@ -3794,6 +3850,8 @@ function buildPriusModel(THREE, options) {
       const box = (x0, x1, yb, yt, z0, z1, key, solid) => put(new THREE.BoxGeometry(x1 - x0, yt - yb, z1 - z0), TR((x0 + x1) / 2, (yb + yt) / 2, (z0 + z1) / 2), key, solid);
       const boxR = (cx, cy, cz, w, h, d, ry, rx, rz, key, solid) => put(new THREE.BoxGeometry(w, h, d), TR(cx, cy, cz, ry, rx, rz), key, solid);
       const cyl = (cx, yb, yt, cz, r0, r1, seg, key, solid) => put(new THREE.CylinderGeometry(r1 === undefined ? r0 : r1, r0, yt - yb, seg || 8), TR(cx, (yb + yt) / 2, cz), key, solid);
+      // a flat railing panel (corners a, b, c, d in cabin coordinates) of painted spindles
+      const railQuad = (a, b, c, d) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...d], 3)); g.computeVertexNormals(); put(g, new THREE.Matrix4(), 'rails', false); };
       // an invisible collision ramp (a flat quad from corner a to corner c)
       const ramp = (pts) => { const p = pts.map(q => [X + q[0], y0 + q[1], Z + q[2]]); for (const [a, b, c] of [[0, 1, 2], [0, 2, 3]]) solidAdd(...p[a], ...p[b], ...p[c], 'wall', [p[a][0], p[a][1] + 1, p[a][2]], false); };
       // a wall outline in (u along the wall, v up): door notches cut from the bottom edge (arched or square), window holes, a sloped top
@@ -3880,14 +3938,9 @@ function buildPriusModel(THREE, options) {
       { const F = FF; fbox(F, -0.72, -0.6, UF, 5.45, -0.005, 0.06, 'trim', true); fbox(F, 0.6, 0.72, UF, 5.45, -0.005, 0.06, 'trim', true); fbox(F, -0.78, 0.78, 5.35, 5.5, -0.005, 0.08, 'trim', true);
         const dg = new THREE.Group(); dg.position.set(X - 0.585, y0 + UF, Z - D + 0.1); scene.add(dg);
         const wm = R.trim.mat, dh = 2.22, dw2 = 1.17, parts = [];
-        const bx = (w, h, d, x, y, z, m) => { const q = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m || wm); q.position.set(x, y, z); parts.push(q); return q; };
-        bx(0.12, dh, 0.06, 0.06, dh / 2, 0.03); bx(0.12, dh, 0.06, dw2 - 0.06, dh / 2, 0.03); bx(dw2, 0.12, 0.06, dw2 / 2, dh - 0.06, 0.03); bx(dw2, 0.36, 0.06, dw2 / 2, 0.18, 0.03); bx(dw2, 0.08, 0.06, dw2 / 2, 0.92, 0.03);
-        bx(0.2, 0.2, 0.02, dw2 / 2 - 0.25, 0.18, -0.005); bx(0.2, 0.2, 0.02, dw2 / 2 + 0.25, 0.18, -0.005);   // two small raised panels at the bottom
-        for (const gx2 of [dw2 / 3, 2 * dw2 / 3]) bx(0.035, dh - 1.08, 0.04, gx2, 0.96 + (dh - 1.08) / 2, 0.03);
-        bx(dw2 - 0.24, 0.035, 0.04, dw2 / 2, 0.96 + (dh - 1.08) / 2, 0.03);
-        const gl = bx(dw2 - 0.24, dh - 1.08, 0.012, dw2 / 2, 0.96 + (dh - 1.08) / 2, 0.03, R.glass.mat); noShadow.push(gl);
-        bx(dw2 - 0.24, 0.62, 0.012, dw2 / 2, 0.36 + 0.28, 0.03, R.glass.mat).visible = false;
-        for (const pz of [-0.03, 0.09]) { const kn = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), R.brass.mat); kn.position.set(dw2 - 0.12, 1.0, pz); parts.push(kn); }
+        const bm = M(0, T2.deckDoorB); bm.alphaTest = 0.5; bm.side = THREE.DoubleSide;   // the whole door baked into one texture
+        const slab = new THREE.Mesh(new THREE.BoxGeometry(dw2, dh, 0.06), [wm, wm, wm, wm, bm, bm]); slab.position.set(dw2 / 2, dh / 2, 0.03); parts.push(slab);
+        const gl = new THREE.Mesh(new THREE.PlaneGeometry(dw2 - 0.24, dh - 1.08), R.glass.mat); gl.position.set(dw2 / 2, 0.96 + (dh - 1.08) / 2, 0.03); parts.push(gl); noShadow.push(gl);
         const hit = new THREE.Mesh(new THREE.BoxGeometry(dw2, dh, 0.2), new THREE.MeshBasicMaterial({ visible: false })); hit.position.set(dw2 / 2, dh / 2, 0.03); parts.push(hit);
         for (const q of parts) dg.add(q);
         deckDoor.g = dg;
@@ -3935,8 +3988,6 @@ function buildPriusModel(THREE, options) {
         box(fx0, fx1, 2.62, top, -0.75, -0.5, 'stone', true); box(fx0, fx1, 2.62, top, 0.5, 0.75, 'stone', true);
         // a corbelled band and a rim round the top
         for (const [yb, yt, p] of [[9.3, 9.45, 0.07], [top, top + 0.14, 0.1]]) { box(sx0 - p, C0 + (yt > top ? 0.02 : 0), yb, yt, -0.75 - p, -0.5, 'stone', true); box(sx0 - p, C0 + (yt > top ? 0.02 : 0), yb, yt, 0.5, 0.75 + p, 'stone', true); box(sx0 - p, fx0, yb, yt, -0.5, 0.5, 'stone', true); box(fx1, C0 + (yt > top ? 0.02 : 0), yb, yt, -0.5, 0.5, 'stone', true); }
-        // two clay pots on the rim corners, out of the way of the flue
-        for (const pz of [-0.62, 0.62]) cyl(sx0 + 0.13, top + 0.14, top + 0.6, pz, 0.12, 0.1, 8, 'red', true);
         // inside: an arched stone surround, a mantel beam, a hearth stone
         { const s = new THREE.Shape(); s.moveTo(-1.15, FB); s.lineTo(-1.15, 1.35); s.absarc(0, 1.35, 1.15, Math.PI, 0, true); s.lineTo(1.15, FB); s.lineTo(0.75, FB); s.lineTo(0.75, 1.35); s.absarc(0, 1.35, 0.75, 0, Math.PI, false); s.lineTo(-0.75, FB); s.lineTo(-1.15, FB);
           put(ext(s, 0.1), new THREE.Matrix4().set(0, 0, 1, -W + T, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1), 'stone', true);
@@ -3972,20 +4023,12 @@ function buildPriusModel(THREE, options) {
         fbox(F, 0.95, 1.01, 1.9, 2.02, 0, 0.2, 'iron', false); fbox(F, 0.9, 1.06, 1.6, 1.62, 0.12, 0.28, 'iron', false); fbox(F, 0.9, 1.06, 1.88, 1.92, 0.12, 0.28, 'iron', false);
         fbox(F, 0.92, 1.04, 1.62, 1.88, 0.14, 0.26, 'emis', false);
         const dg = new THREE.Group(); dg.position.set(X - 0.585, y0 + FB, Z - D + 0.08); scene.add(dg);
-        const dmat = M(0, T2.door); dmat.side = THREE.DoubleSide;
+        const dmat = M(0, T2.doorB); dmat.side = THREE.DoubleSide;   // planks, panels, hinges, porthole, knob and kick plate all painted on
         const sl = new THREE.Shape(); sl.moveTo(0, 0.02); sl.lineTo(1.17, 0.02); sl.lineTo(1.17, 1.7); sl.absarc(0.585, 1.7, 0.585, 0, Math.PI, false); sl.lineTo(0, 0.02);
-        const ph = new THREE.Path(); ph.absarc(0.585, 1.62, 0.17, 0, Math.PI * 2, false); sl.holes.push(ph);
-        const dgeo = ext(sl, 0.07, 14); { const uv = dgeo.attributes.uv, p = dgeo.attributes.position; for (let k = 0; k < uv.count; k++) uv.setXY(k, p.getX(k) / 0.6, p.getY(k) / 0.6); }
+        const ph = new THREE.Path(); ph.absarc(0.585, 1.62, 0.17, 0, Math.PI * 2, false); sl.holes.push(ph);   // the porthole: a real window
+        const dgeo = ext(sl, 0.07, 10); { const uv = dgeo.attributes.uv, p = dgeo.attributes.position; for (let k = 0; k < uv.count; k++) uv.setXY(k, p.getX(k) / 1.17, p.getY(k) / 2.3); }
         const parts = [new THREE.Mesh(dgeo, dmat)];
-        const ironM = R.iron.mat, brassM = R.brass.mat;
-        const pr = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.035, 6, 16), brassM); pr.position.set(0.585, 1.62, -0.01); parts.push(pr);
-        const pr2 = pr.clone(); pr2.position.z = 0.08; parts.push(pr2);
         const pgl = new THREE.Mesh(new THREE.CircleGeometry(0.17, 16), R.glass.mat); pgl.position.set(0.585, 1.62, 0.035); parts.push(pgl); noShadow.push(pgl);
-        for (const [py, len] of [[0.35, 0.75], [1.35, 0.7]]) { const h = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.02), ironM); h.position.set(len / 2 + 0.02, py, -0.012); parts.push(h); const end = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 8), ironM); end.rotation.x = Math.PI / 2; end.position.set(len + 0.02, py, -0.012); parts.push(end); }
-        for (const pz of [-0.04, 0.11]) { const kn = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), brassM); kn.position.set(1.02, 1.0, pz); parts.push(kn); const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.015, 8), brassM); rose.rotation.x = Math.PI / 2; rose.position.set(1.02, 1.0, pz < 0 ? -0.005 : 0.075); parts.push(rose); }
-        const kh = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.07, 0.02), ironM); kh.position.set(1.02, 0.88, -0.01); parts.push(kh);
-        for (const [px, py, w2, h2] of [[0.32, 0.65, 0.34, 0.75], [0.85, 0.65, 0.34, 0.75]]) { const pn = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, 0.02), dmat); pn.position.set(px, py, -0.008); parts.push(pn); }   // raised panels
-        const kp = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 0.015), brassM); kp.position.set(0.585, 0.08, -0.01); parts.push(kp);   // kick plate
         const hit = new THREE.Mesh(new THREE.BoxGeometry(1.17, 2.3, 0.2), new THREE.MeshBasicMaterial({ visible: false })); hit.position.set(0.585, 1.15, 0.035); parts.push(hit);
         for (const p of parts) dg.add(p);
         houseDoor.g = dg;
@@ -4013,8 +4056,8 @@ function buildPriusModel(THREE, options) {
         // railings
         const rail = (x0, x1, z0, z1) => { box(x0, x1, UF + 0.92, UF + 1.02, z0, z1, 'trim', true); box(x0, x1, UF + 0.08, UF + 0.15, z0, z1, 'trim', true); };
         rail(-W, W, dz0 + 0.02, dz0 + 0.14); rail(-W, -W + 0.12, dz0 + 0.02, dz1); rail(W - 0.12, W, dz0 + 0.02, dz1);
-        for (let x = -W + 0.12; x < W - 0.1; x += 0.15) box(x - 0.02, x + 0.02, UF + 0.15, UF + 0.92, dz0 + 0.06, dz0 + 0.1, 'trim', false);
-        for (const xs of [-W + 0.06, W - 0.06]) for (let z = dz0 + 0.2; z < dz1 - 0.05; z += 0.15) box(xs - 0.02, xs + 0.02, UF + 0.15, UF + 0.92, z - 0.02, z + 0.02, 'trim', false);
+        railQuad([-W + 0.12, UF + 0.15, dz0 + 0.08], [W - 0.12, UF + 0.15, dz0 + 0.08], [W - 0.12, UF + 0.92, dz0 + 0.08], [-W + 0.12, UF + 0.92, dz0 + 0.08]);
+        for (const xs of [-W + 0.06, W - 0.06]) railQuad([xs, UF + 0.15, dz0 + 0.14], [xs, UF + 0.15, dz1], [xs, UF + 0.92, dz1], [xs, UF + 0.92, dz0 + 0.14]);
         for (const [x, z] of [[-W + 0.06, dz0 + 0.08], [W - 0.06, dz0 + 0.08], [-1.5, dz0 + 0.08], [1.5, dz0 + 0.08]]) { box(x - 0.07, x + 0.07, UF, UF + 1.1, z - 0.07, z + 0.07, 'trim', true); box(x - 0.09, x + 0.09, UF + 1.1, UF + 1.15, z - 0.09, z + 0.09, 'trim', false); }
         // patio pavers under the deck
         box(-W, W, 0, 0.06, dz0 - 0.2, -D - 0.1, 'pavers', true);
@@ -4097,15 +4140,15 @@ function buildPriusModel(THREE, options) {
         // handrail on balusters
         const hr0 = [SX0 - 0.05, FT + rise + 0.9], hr1 = [SX1, UF + 0.92], hl = Math.hypot(hr1[0] - hr0[0], hr1[1] - hr0[1]), ha = Math.atan2(hr1[1] - hr0[1], hr1[0] - hr0[0]);
         boxR((hr0[0] + hr1[0]) / 2, (hr0[1] + hr1[1]) / 2, SZ0 - 0.04, hl, 0.07, 0.08, 0, 0, ha, 'woodDark', false);
-        for (let i = 0; i < n; i++) { const bx = SX0 + (i + 0.5) * run, ty = FT + (i + 1) * rise, hy = hr0[1] + (bx - hr0[0]) * Math.tan(ha); cyl(bx, ty, hy, SZ0 - 0.04, 0.025, 0.02, 6, 'trim', false); }
+        { const hy = x => hr0[1] + (x - hr0[0]) * Math.tan(ha), zb = SZ0 - 0.04; railQuad([SX0, FT + rise * 0.5, zb], [SX1, UF, zb], [SX1, hy(SX1), zb], [SX0, hy(SX0), zb]); }
         box(SX0 - 0.14, SX0 + 0.02, FT, FT + 1.15, SZ0 - 0.12, SZ0 + 0.04, 'woodDark', true); put(new THREE.SphereGeometry(0.09, 8, 6), TR(SX0 - 0.06, FT + 1.22, SZ0 - 0.04), 'woodDark', false);
         // the ramp you actually walk on
         ramp([[SX0 - 0.05, FT, SZ0], [SX1, UF, SZ0], [SX1, UF, SZ1], [SX0 - 0.05, FT, SZ1]]);
         // round the stairwell upstairs: a railing so you don't drop through
         box(SX0 - 0.12, SX1 + 0.06, UF + 0.92, UF + 1.0, 1.73, 1.8, 'woodDark', true); box(SX0 - 0.12, SX1 + 0.06, UF, UF + 0.08, 1.73, 1.8, 'woodDark', false);
-        for (let x = SX0 + 0.05; x < SX1; x += 0.14) cyl(x, UF + 0.08, UF + 0.92, 1.765, 0.02, 0.02, 6, 'trim', false);
+        railQuad([SX0 - 0.05, UF + 0.08, 1.765], [SX1, UF + 0.08, 1.765], [SX1, UF + 0.92, 1.765], [SX0 - 0.05, UF + 0.92, 1.765]);
         box(SX0 - 0.12, SX0 - 0.05, UF + 0.92, UF + 1.0, 1.8, D - T, 'woodDark', true); box(SX0 - 0.12, SX0 - 0.05, UF, UF + 0.08, 1.8, D - T, 'woodDark', false);
-        for (let z = 1.95; z < D - T - 0.05; z += 0.14) cyl(SX0 - 0.085, UF + 0.08, UF + 0.92, z, 0.02, 0.02, 6, 'trim', false);
+        railQuad([SX0 - 0.085, UF + 0.08, 1.82], [SX0 - 0.085, UF + 0.08, D - T], [SX0 - 0.085, UF + 0.92, D - T], [SX0 - 0.085, UF + 0.92, 1.82]);
         box(SX0 - 0.16, SX0 - 0.03, UF, UF + 1.1, 1.68, 1.82, 'woodDark', true);
         box(SX1 - 0.02, SX1 + 0.1, UF, UF + 1.1, 1.7, 1.82, 'woodDark', true);
       }
@@ -4182,13 +4225,15 @@ function buildPriusModel(THREE, options) {
       box(gx - 0.7, gx + 0.7, gTop(gx) - 0.18, gTop(gx) - 0.1, 0.3, 0.5, 'trim', false); box(gx - 0.65, gx + 0.65, gTop(gx) - 0.22, gTop(gx) - 0.18, 0.33, 0.47, 'emisCool', false);
       // the sectional door: four panels, a row of windows in the top one, a handle and a rubber seal
       const dw = GD1 - GD0, pivot = new THREE.Group(); pivot.position.set(X + gdx, y0 + GDH, Z - D + 0.15); scene.add(pivot);
-      { const gm = M(0, T2.gdoor), sh = GDH - FB, sec = sh / 4;
-        for (let k = 0; k < 4; k++) { const g = new THREE.BoxGeometry(dw - 0.02, sec - 0.015, 0.08), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * dw / 2.4); const m = new THREE.Mesh(g, gm); m.position.y = -(k + 0.5) * sec; pivot.add(m); }
-        for (let k = 0; k < 6; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.26, 0.09), R.glass.mat.clone()); m.material.color.setHex(0x55707e); m.material.opacity = 0.75; m.position.set(-dw / 2 + (k + 0.5) * dw / 6, -sec / 2, 0); pivot.add(m); }
-        const hd = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.05, 0.05), R.iron.mat); hd.position.set(0, -sh + 0.45, -0.07); pivot.add(hd);
-        const lk = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 8), R.brass.mat); lk.rotation.x = Math.PI / 2; lk.position.set(0, -sh + 0.62, -0.05); pivot.add(lk);
-        const seal = new THREE.Mesh(new THREE.BoxGeometry(dw, 0.04, 0.09), R.tyre.mat); seal.position.y = -sh + 0.02; pivot.add(seal);
-        for (let k = 1; k < 4; k++) for (const hx of [-dw / 2 + 0.2, 0, dw / 2 - 0.2]) { const hg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.02), R.iron.mat); hg.position.set(hx, -k * sec, 0.05); pivot.add(hg); }
+      { const sh = GDH - FB, gm = M(0, T2.gdoorB), edge = M(0xe9e6de);   // sections, panels, windows, handle, hinges and seal all baked into one texture
+        const hw = (dw - 0.02) / 2, s = new THREE.Shape(); s.moveTo(-hw, -sh); s.lineTo(hw, -sh); s.lineTo(hw, 0); s.lineTo(-hw, 0); s.lineTo(-hw, -sh);
+        const gmat = R.glass.mat.clone(); gmat.color.setHex(0x6d8a96); gmat.opacity = 0.45;
+        for (let k = 0; k < 6; k++) { const cx = -hw + (k + 0.5) * hw / 3, cy = -sh / 8, hp = new THREE.Path(); hp.moveTo(cx - 0.24, cy - 0.12); hp.lineTo(cx + 0.24, cy - 0.12); hp.lineTo(cx + 0.24, cy + 0.12); hp.lineTo(cx - 0.24, cy + 0.12); hp.lineTo(cx - 0.24, cy - 0.12); s.holes.push(hp);   // the windows: real holes with glass in
+          const gl = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.24), gmat); gl.position.set(cx, cy, 0); noShadow.push(gl); gl.userData.win = true; pivot.add(gl); }
+        const g = new THREE.ExtrudeGeometry(s, { depth: 0.08, bevelEnabled: false }); g.translate(0, 0, -0.04);
+        { const uv = g.attributes.uv, P = g.attributes.position; for (let k = 0; k < uv.count; k++) uv.setXY(k, (P.getX(k) + hw) / (2 * hw), (P.getY(k) + sh) / sh); }
+        const m = new THREE.Mesh(g, gm); pivot.add(m); pivot.children.unshift(pivot.children.pop());   // (the door itself stays the first child: the ram's debris copies its material)
+        garage.hl = { x: X + gdx, y: y0 + GDH, z: Z - D + 0.15, hw: (dw - 0.02) / 2, h: sh, sec: sh / 4, wall: Math.max(gdx - W, GX1 - gdx) + 0.1 };   // (for the headlights)
       }
       garage.door = pivot;
       garage.wall = { x: X + gdx, z: Z - D + 0.15, yaw: 0, hw: dw / 2, hl: 0.08, top: y0 + GDH, wall: true, door: garage };
@@ -4375,7 +4420,7 @@ function buildPriusModel(THREE, options) {
 
       // ---- weld everything into one mesh per material
       for (const k in R) { const B = R[k]; if (!B.P.length) continue; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.N, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(B.U, 2));
-        const m = new THREE.Mesh(g, B.mat); m.userData.solidMesh = true; scene.add(m); if (k === 'glass' || k === 'glassLit' || k === 'emis' || k === 'emisCool') noShadow.push(m); }
+        const m = new THREE.Mesh(g, B.mat); m.userData.solidMesh = true; scene.add(m); if (k === 'glass' || k === 'glassLit' || k === 'emis' || k === 'emisCool' || k === 'rails') noShadow.push(m); }
 
       // ---- gazebo on the bank
       const gzx = 22, gzz = LAKE.z + 29, gy = heightAt(gzx, gzz), gp = new THREE.Group(); gp.position.set(gzx, gy, gzz); scene.add(gp);
@@ -4498,7 +4543,23 @@ function buildPriusModel(THREE, options) {
     const VOIDU = {};
     const TFOGU = { uTFogC: { value: new THREE.Color(0x3a3f48) }, uTFogA: { value: 0 }, uTFogN: { value: 10 }, uTFogF: { value: 260 } };
     // sun shadows and shading for every PS1 material: a depth map seen from the sun, and which way each face points
-    const SHU = { uShMap: { value: null }, uShM: { value: new THREE.Matrix4() }, uShOn: { value: 0 }, uShK: { value: 0.3 }, uSunD: { value: new THREE.Vector3(0, 1, 0) }, uShTex: { value: new THREE.Vector2(2048, 2048) }, uHLa: { value: new THREE.Vector3() }, uHLb: { value: new THREE.Vector3() }, uHLd: { value: new THREE.Vector3(0, 0, -1) }, uHLi: { value: 0 } };
+    // the closed garage door blocks the car's headlights: light only gets past through the gaps round the edge, between the
+    // sections and (dimmed) through the little windows; the log wall round it blocks it completely. uDoor: centre x, top y,
+    // plane z, on; uDoorS: half width, height, section height, half width of the wall
+    const DOOR_GLSL = [
+      'uniform vec4 uDoor, uDoorS;',
+      'float doorPass(vec3 Lp, vec3 P) {',
+      '  if (uDoor.w < 0.5) return 1.0;',
+      '  float a = Lp.z - uDoor.z, b = P.z - uDoor.z; if (a * b >= 0.0) return 1.0;',
+      '  vec3 Q = mix(Lp, P, a / (a - b)); float u = Q.x - uDoor.x, v = uDoor.y - Q.y;',
+      '  if (abs(u) > uDoorS.w || v < -1.5 || v > uDoorS.y + 0.4) return 1.0;',
+      '  float e = min(uDoorS.x - abs(u), min(v, uDoorS.y - v)); if (e < -0.025) return 0.0;',
+      '  float k = 1.0 - smoothstep(0.008, 0.03, abs(e));',
+      '  float sm = abs(mod(v + uDoorS.z * 0.5, uDoorS.z) - uDoorS.z * 0.5); k = max(k, 0.6 * (1.0 - smoothstep(0.005, 0.016, sm)));',
+      '  float cw = uDoorS.x / 3.0, wx = abs(mod(u + uDoorS.x, cw) - cw * 0.5); if (wx < 0.24 && abs(v - uDoorS.z * 0.5) < 0.12) k = max(k, 0.6);',
+      '  return k;',
+      '}', ''].join('\n');
+    const SHU = { uDoor: { value: new THREE.Vector4(0, 0, 0, 0) }, uDoorS: { value: new THREE.Vector4(1, 1, 1, 1) }, uShMap: { value: null }, uShM: { value: new THREE.Matrix4() }, uShOn: { value: 0 }, uShK: { value: 0.3 }, uSunD: { value: new THREE.Vector3(0, 1, 0) }, uShTex: { value: new THREE.Vector2(2048, 2048) }, uHLa: { value: new THREE.Vector3() }, uHLb: { value: new THREE.Vector3() }, uHLd: { value: new THREE.Vector3(0, 0, -1) }, uHLi: { value: 0 } };
     function voidGLSL(V) {
       const pad = (V.pad || 0).toFixed(3);
       return `uniform highp sampler2D uRV; uniform vec4 uRVB, uMainA, uMainB, uRoomA, uRoomB; varying vec3 vVW;
@@ -4558,7 +4619,7 @@ bool inVoid(vec3 p) {
           Object.assign(shader.uniforms, SHU);
           const V = mat.userData.voids;
           shader.vertexShader = 'varying vec3 vSW;\n' + shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 wq = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nwq = instanceMatrix * wq;\n#endif\nvSW = (modelMatrix * wq).xyz; }');
-          if (!mat.userData.noShade) shader.fragmentShader = 'uniform sampler2D uShMap; uniform mat4 uShM; uniform float uShOn, uShK, uHLi; uniform vec3 uSunD, uHLa, uHLb, uHLd; uniform vec2 uShTex; varying vec3 vSW;\n' + shader.fragmentShader.replace('#include <fog_fragment>', [
+          if (!mat.userData.noShade) shader.fragmentShader = 'uniform sampler2D uShMap; uniform mat4 uShM; uniform float uShOn, uShK, uHLi; uniform vec3 uSunD, uHLa, uHLb, uHLd; uniform vec2 uShTex; varying vec3 vSW;\n' + DOOR_GLSL + shader.fragmentShader.replace('#include <fog_fragment>', [
             'if (uShOn > 0.5) {',
             '  vec3 N = normalize(cross(dFdx(vSW), dFdy(vSW)));',   // the face's own normal, turned toward the camera
             '  float ndl = dot(N, uSunD), sh = 1.0;',
@@ -4575,7 +4636,7 @@ bool inVoid(vec3 p) {
             '  vec3 Nh = normalize(cross(dFdx(vSW), dFdy(vSW))); float hl = 0.0;',
             '  for (int k = 0; k < 2; k++) { vec3 Lp = k == 0 ? uHLa : uHLb; vec3 L = Lp - vSW; float d = length(L); L /= max(d, 1e-3);',
             '    float cs = dot(-L, uHLd); float cone = smoothstep(0.78, 0.95, cs) * (0.55 + 0.45 * smoothstep(0.9, 0.985, cs));',
-            '    hl += cone * abs(dot(Nh, L)) * 30.0 / (8.0 + d * d) * smoothstep(0.3, 1.2, d); }',
+            '    hl += cone * abs(dot(Nh, L)) * 30.0 / (8.0 + d * d) * smoothstep(0.3, 1.2, d) * doorPass(Lp, vSW); }',
             '  gl_FragColor.rgb += diffuseColor.rgb * vec3(1.0, 0.95, 0.84) * hl * uHLi;',
             '}',
             '#include <fog_fragment>'].join('\n'));
@@ -4763,8 +4824,10 @@ bool inVoid(vec3 p) {
       if (signs) {   // only what's between you and the signs can hide them
         let sd = 0; for (const tr of board.trees) sd = Math.max(sd, Math.hypot(tr.g.position.x - cam.position.x, tr.g.position.z - cam.position.z));
         const far = cullFar(cam.position.x, cam.position.z, sd + 4);
+        const cut = noShadow.filter(o => o.visible); cut.forEach(o => { o.visible = false; });   // cut-out trees and glass: drawn solid here they'd hide the signs through their see-through parts
         scene.overrideMaterial = depthMat; renderer.render(scene, cam); scene.overrideMaterial = null;
         for (const o of far) o.visible = true;
+        cut.forEach(o => { o.visible = true; });
       }
       else renderer.clear();
       if (signs || popups.length || dashT) { cam.layers.set(TEXT_LAYER); renderer.autoClear = false; renderer.render(scene, cam); renderer.autoClear = true; cam.layers.set(0); }
@@ -4979,15 +5042,20 @@ bool inVoid(vec3 p) {
       const hs = buildHouse(toon); makeTruck(toon, hs.truckSpot); spareTyres(); makeSparks(); makeDirt();
       buildRing(toon); buildPeninsula(toon);   // (the ground over the ring road is hidden by its voids again: deleting it broke the hillside over the jump's mouths)
 
-      // Trees (instanced), kept out of the target lane in front of the pad
-      const N = 1050, trunkG = new THREE.CylinderGeometry(0.22, 0.3, 2.2, 7), leafG = new THREE.ConeGeometry(1.7, 4.2, 8);
-      const leafOutG = leafG.clone().scale(1.08, 1.04, 1.08);
-      const trunks = new THREE.InstancedMesh(trunkG, toon(0x7a5a3c), N);
-      const leaves = new THREE.InstancedMesh(leafG, toon(0x3f8f4f), N);
-      const leafOut = new THREE.InstancedMesh(leafOutG, new THREE.MeshBasicMaterial({ color: 0x1d3a24, side: THREE.BackSide }), N);
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p3 = new THREE.Vector3();
+      // Trees: PS1 cross trees, one instanced draw per painting. A scatter of ordinary spruces over the meadow (kept out
+      // of the target lane in front of the pad), then a forest that closes in toward the mountains, where they get huge
+      const XK = xtreeKit(), picks = XK.map(() => []);
+      const treeOK = (x, z, steep) => {
+        if (TUNNEL_MODE !== 'none' && Math.abs(x) < 28 && z > 185 && z < 450) return false;   // the tunnel cuttings
+        if (TT_HOLE && groundHoleAt(x, z)) return false;
+        if (TUNNEL_MODE === 't3') { const ps = ringPieces(x, z, 12, true); if (ps && ps.some(p => Math.abs(p.lat) < p.hw + 7)) return false; }   // (nor on its roads)
+        { const q = trackAt(x, z); if (q && Math.abs(q.l) < 15) return false; }
+        const y = heightAt(x, z);
+        if (y < SEA + 1.5 || reserved(x, z) || coastDist(x, z) < 24 || Math.abs(trailLat(x, z)) < 6) return false;
+        return Math.hypot(heightAt(x + 2, z) - heightAt(x - 2, z), heightAt(x, z + 2) - heightAt(x, z - 2)) / 4 <= steep;
+      };
       let n = 0, tries = 0;
-      while (n < N && tries++ < 80000) {
+      while (n < 700 && tries++ < 80000) {
         let x, z, r;
         const onIsland = Math.random() < 0.07, onPen = !onIsland && Math.random() < 0.3;
         if (onPen) { const a = rnd(0, Math.PI * 2), d = Math.sqrt(Math.random()); x = PEN.x + Math.sin(a) * d * PEN.rx; z = PEN.z + Math.cos(a) * d * PEN.rz; r = Math.hypot(x, z); const q = trackAt(x, z); if (penU(x, z) < 26 || (q && Math.abs(q.l) < 15)) continue; }
@@ -4999,25 +5067,30 @@ bool inVoid(vec3 p) {
           if (Math.abs(Math.abs(ang) - Math.PI) < 0.7 && r < 95) continue;   // shooting range behind the start
           if (r > 260 && Math.random() < 0.2) continue;
         }
-        if (TUNNEL_MODE !== 'none' && Math.abs(x) < 28 && z > 185 && z < 450) continue;   // the tunnel cuttings
-        if (TT_HOLE && groundHoleAt(x, z)) continue;   // (none in the track)
-        if (TUNNEL_MODE === 't3') { const ps = ringPieces(x, z, 12, true); if (ps && ps.some(p => Math.abs(p.lat) < p.hw + 7)) continue; }   // (nor on its roads)
-        { const q = trackAt(x, z); if (q && Math.abs(q.l) < 15) continue; }
-        const y = heightAt(x, z);
-        if (y < SEA + 1.5 || y > 92 || reserved(x, z) || coastDist(x, z) < 24 || Math.abs(trailLat(x, z)) < 6) continue;
-        if (Math.hypot(heightAt(x + 2, z) - heightAt(x - 2, z), heightAt(x, z + 2) - heightAt(x, z - 2)) / 4 > 1.0) continue;
-        const k = rnd(0.75, 1.5);
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd(0, 6));
-        sc.set(k, k, k);
-        m4.compose(p3.set(x, y + 1.1 * k, z), q, sc); trunks.setMatrixAt(n, m4);
-        const wt = { x, z, k, y0: y, kind: 'inst', idx: n, alive: true, tm: m4.clone() };
-        m4.compose(p3.set(x, y + (2.2 + 2.1) * k, z), q, sc); leaves.setMatrixAt(n, m4); leafOut.setMatrixAt(n, m4);
-        wt.lm = m4.clone(); worldTrees.push(wt); solidTrees.push(wt);
-        n++;
+        if (forestAt(x, z) > 0.25 || heightAt(x, z) > 92 || !treeOK(x, z, 1.0)) continue;   // (the forest grows its own)
+        picks[n % 3].push({ x, z, TH: rnd(7, 12) }); n++;
       }
-      trunks.count = leaves.count = leafOut.count = n;
-      scene.add(trunks, leaves, leafOut);
-      instTrees = { trunks, leaves, leafOut };
+      // the forest: a jittered grid, denser and taller the deeper in, thinning and shrinking toward the tree line
+      for (let gx = -450; gx <= 450; gx += 7.5) for (let gz = -450; gz <= 450; gz += 7.5) {
+        const x = gx + rnd(-3.4, 3.4), z = gz + rnd(-3.4, 3.4), f = forestAt(x, z);
+        if (f < 0.25 || Math.random() > f) continue;
+        const y = heightAt(x, z), tl = 1 - smooth(72, 98, y);   // (up to where the grass gives way to rock)
+        if (Math.random() > tl || !treeOK(x, z, 1.0)) continue;
+        const big = f * (0.5 + 0.5 * tl), v = big > 0.45 || Math.random() < 0.5 ? 3 + Math.floor(Math.random() * 3) : Math.floor(Math.random() * 3);
+        picks[v].push({ x, z, TH: (12 + 40 * big) * rnd(0.8, 1.2) });
+      }
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), upY = new THREE.Vector3(0, 1, 0);
+      xTrees = XK.map((kit, v) => {
+        const list = picks[v], im = new THREE.InstancedMesh(kit.geo, kit.mat, Math.max(1, list.length));
+        im.frustumCulled = false; im.userData.noStick = true; noShadow.push(im);   // (cut-out panels: no square shadows)
+        list.forEach((t, i) => {
+          const y = heightAt(t.x, t.z), r = Math.max(0.18, kit.o.trunk * t.TH / 256);
+          q.setFromAxisAngle(upY, rnd(0, 6)); sc.set(t.TH, t.TH, t.TH); m4.compose(p3.set(t.x, y - 0.05, t.z), q, sc); im.setMatrixAt(i, m4);
+          const wt = { x: t.x, z: t.z, k: Math.max(1, r / 0.3), r, h: t.TH, y0: y, kind: 'xinst', v, idx: i, alive: true, m: m4.clone() };
+          worldTrees.push(wt); solidTrees.push(wt);
+        });
+        im.count = list.length; scene.add(im); return im;
+      });
 
       // Clouds: flat slabs parallel to the ground, built on a coarse block grid, tinted by the sunrise
       // and faded into the morning haze. Each texel is one big square block.
@@ -5251,6 +5324,18 @@ bool inVoid(vec3 p) {
     }
     function removeTarget(t) { scene.remove(t.mesh); pool.push(t); }
     let MCON_BTNS = null; const btnHideMat = new THREE.MeshBasicMaterial({ visible: false });
+    // the glow behind every aim-trainer button: a round, soft, light-blue halo, added on top of whatever is behind it
+    const BTN_HALO = { mat: null, geo: null };
+    function btnHaloMat() {
+      if (BTN_HALO.mat) return BTN_HALO.mat;
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d'), g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, 'rgba(235,250,255,1)'); g.addColorStop(0.3, 'rgba(150,225,255,0.85)'); g.addColorStop(0.62, 'rgba(60,170,255,0.35)'); g.addColorStop(1, 'rgba(40,140,255,0)');
+      c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(cv);
+      BTN_HALO.mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+      BTN_HALO.mat.userData.noShade = true;
+      return BTN_HALO.mat;
+    }
     function clearTargets() { G.targets.forEach(removeTarget); G.targets = []; if (G.start) { removeTarget(G.start); G.start = null; } }
 
     // Gridshot: 5 x 3 grid of slots, three live at a time
@@ -5929,67 +6014,9 @@ bool inVoid(vec3 p) {
       if (sub) { const sb = pxFitB(sub, 'mono', W * 0.82, H * 0.2, Math.max(1, b - 1)); pxText(c, sub, W / 2, H * 0.74, sb, 'mono', MC.pinkInk, 'center'); }
       pl.tex.needsUpdate = true;
     }
-    function makeBoard() {
-      const T = (color, extra) => new THREE.MeshToonMaterial(Object.assign({ color, gradientMap: toonGrad }, extra || {}));
-      const trunkMat = T(0x7a5a3c), leafMat = T(0x3f8f4f), backWood = T(0x5b3a1f), sideWood = T(0x8a5a32), nailMat = T(0x55585e);
-      const leafInk = new THREE.MeshBasicMaterial({ color: 0x1d3a24, side: THREE.BackSide });
-      const ink = new THREE.MeshBasicMaterial({ color: 0x1d1f26, side: THREE.BackSide });
-      const planks = [], solid = [], trees = [];
-      // A tree just like the others in the world, with a sign nailed to the trunk
-      function tree(kind) {
-        const g = new THREE.Group(); scene.add(g);
-        const k = TREE_K;
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.2, 7), trunkMat); trunk.scale.setScalar(k); trunk.position.y = 1.1 * k; g.add(trunk);
-        const leaf = new THREE.Mesh(new THREE.ConeGeometry(1.7, 4.2, 8), leafMat); leaf.scale.setScalar(k); leaf.position.y = 4.3 * k; g.add(leaf);
-        const out = new THREE.Mesh(new THREE.ConeGeometry(1.7, 4.2, 8).scale(1.08, 1.04, 1.08), leafInk); leaf.add(out);
-        const sign = new THREE.Group(); sign.scale.setScalar(SIGN_S); sign.position.set(0, 1.5, 0.42); g.add(sign);
-        const back = new THREE.Mesh(new THREE.BoxGeometry(5.0, 3.5, 0.12), backWood); back.position.set(0, -0.12, -0.02); sign.add(back);
-        const backInk = new THREE.Mesh(back.geometry, ink); backInk.scale.setScalar(1.02); back.add(backInk);
-        for (const [x, y] of [[-2.3, 1.45], [2.3, 1.45], [-2.3, -1.7], [2.3, -1.7]]) { const n = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.06, 8), nailMat); n.rotation.x = Math.PI / 2; n.position.set(x, y, 0.06); sign.add(n); }
-        solid.push(trunk, leaf, back);
-        const tr = { g, sign, trunk, leaf, kind };
-        trees.push(tr);
-        return tr;
-      }
-      function plank(tr, w, h, cx, cy, kind, data) {
-        const pivot = new THREE.Group(); pivot.position.set(cx, cy + h / 2 - 0.06, 0.09); tr.sign.add(pivot);
-        const cv = document.createElement('canvas'); cv.width = Math.round(w * PX); cv.height = Math.round(h * PX);
-        const tex = sharpTex(cv, true); tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;   // smooth filtering; the 1080p text layer keeps it sharp tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;
-        const front = new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGrad, emissive: 0x000000 });
-        const paperEdge = T(0xe9e7e1);
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), [paperEdge, paperEdge, paperEdge, paperEdge, front, paperEdge]);
-        mesh.position.y = -(h / 2 - 0.06); pivot.add(mesh); mesh.layers.set(TEXT_LAYER);
-        const edge = new THREE.Mesh(mesh.geometry, ink); edge.position.copy(mesh.position); edge.scale.set(1.025, 1.06, 1.15); pivot.add(edge);
-        const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 8), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(0, 0, 0.05); pivot.add(nail);
-        const pl = Object.assign({ tree: tr, pivot, mesh, front, cv, ctx: cv.getContext('2d'), tex, w, h, kind, seed: planks.length + 3, ang: 0, av: 0, push: 0, pv: 0 }, data || {});
-        mesh.userData.plank = pl; planks.push(pl); drawPlank(pl); return pl;
-      }
-      const menu = tree('menu');
-      plank(menu, 3.6, 0.6, 0, 1.2, 'title', { text: 'AIM TRAINER' });
-      Object.keys(MODES).forEach((m, i) => plank(menu, 1.08, 0.52, -1.74 + i * 1.16, 0.5, 'mode', { m, act: () => { G.mode = m; drawBoard(); renderMenu(); } }));
-      plank(menu, 3.2, 0.56, 0, -0.18, 'start', { act: () => { if (G.phase === 'idle') setTimeout(() => { if (G.phase === 'idle') startRound(); }, 260); } });
-      [['l', 'Left sens', -0.78], ['r', 'Right sens', -1.2], ['z', 'Zoom sens', -1.62]].forEach(([k, label, y]) => {
-        plank(menu, 1.5, 0.38, -1.5, y, 'label', { text: label });
-        plank(menu, 0.5, 0.38, -0.35, y, 'minus', { text: '−', k, act: () => { sens[k] = sensStep(sens[k], -1); drawBoard(); renderMenu(); } });
-        plank(menu, 1.0, 0.38, 0.5, y, 'value', { k });
-        plank(menu, 0.5, 0.38, 1.4, y, 'plus', { text: '+', k, act: () => { sens[k] = sensStep(sens[k], 1); drawBoard(); renderMenu(); } });
-      });
-      const lead = tree('lead');
-      plank(lead, 4.6, 3.1, 0, -0.12, 'leader');
-      board = { trees, menu, lead, planks, solid, hover: null, chips: [], ray: new THREE.Raycaster(), boom: null };
-      board.ray.layers.enableAll();
-      // the signs skip the PS1 filter: no vertex snap, and the whole board (not just the paper) also draws in the sharp
-      // full-resolution text layer whenever the signs are in view (its PS1 copy stays for far away and during runs)
-      for (const tr of trees) tr.sign.traverse(o => {
-        if (!o.isMesh) return;
-        if (o.layers.mask !== (1 << TEXT_LAYER)) o.layers.enable(TEXT_LAYER);
-        for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) { m.userData.noSnap = true; m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -2; m.needsUpdate = true; }
-      });
-      // ---- test trees: the classic PS1 "cross tree". The whole tree (trunk included) is painted on one cut-out image,
-      //      put on two flat panels crossed in an X
-      function crossTree(x, z, o) {
+    // ---- the PS1 "cross tree" painting: a whole spruce (trunk included) on a W x 256 cut-out canvas (docs/trees.md)
+    function crossTreeCanvas(o, seed) {
         const W = o.W, H = 256;
-        const paint = seed => {
         const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
         const rnd = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(seed);
         const deep = o.greens;
@@ -6041,9 +6068,100 @@ bool inVoid(vec3 p) {
         }
         c.globalCompositeOperation = 'source-over';
         c.restore();
+        return cv;
+    }
+    // the tree paintings every tree in the world is made from. 0-2: meadow spruces (the two test trees and a cousin);
+    // 3-5: the forest giants, slimmer, darker, with a long bare trunk so you can drive between them under the canopy
+    const XT_VARIANTS = [
+      { seed: 11, W: 128, bare: 0.3, trunk: 4.5, step: 2.5, shape: 0.85, puff: 4, stray: 0.08, gaps: 0.1, holes: 16, greens: ['#0c1a0e', '#142815', '#1d361b', '#284622', '#34562b', '#476b37'] },
+      { seed: 29, W: 176, bare: 0.27, trunk: 5.5, step: 3.6, shape: 0.7, puff: 9, stray: 0.3, gaps: 0.18, holes: 26, greens: ['#0d1c0f', '#162c16', '#20391d', '#2c4b25', '#3b5f30', '#53773e', '#68884a'] },
+      { seed: 47, W: 144, bare: 0.28, trunk: 5, step: 3, shape: 0.78, puff: 6, stray: 0.18, gaps: 0.14, holes: 20, greens: ['#0e1d10', '#172e17', '#213b1e', '#2e4e27', '#3e6232', '#567a40'] },
+      { seed: 61, W: 112, bare: 0.42, trunk: 6, step: 2.3, shape: 0.95, puff: 4, stray: 0.1, gaps: 0.12, holes: 18, greens: ['#09150b', '#102112', '#172d18', '#203b1f', '#2b4a27', '#3b5d32'] },
+      { seed: 83, W: 128, bare: 0.38, trunk: 6.5, step: 2.8, shape: 0.85, puff: 6, stray: 0.2, gaps: 0.16, holes: 24, greens: ['#0a170c', '#122414', '#1a311a', '#244122', '#30512b', '#426636'] },
+      { seed: 97, W: 104, bare: 0.46, trunk: 5.5, step: 2.1, shape: 1.05, puff: 3, stray: 0.06, gaps: 0.08, holes: 12, greens: ['#08130a', '#0f1f10', '#162a16', '#1e371d', '#284524', '#36572f'] }
+    ];
+    // each painting becomes one texture (the X's two panels stacked: each its own painting) and one unit-tall crossed-panel
+    // geometry (base at 0), so a whole forest of one kind is a single instanced draw
+    let XTREE = null, xTrees = null;
+    function xtreeKit() {
+      if (XTREE) return XTREE;
+      XTREE = XT_VARIANTS.map(o => {
+        const cv = document.createElement('canvas'); cv.width = o.W; cv.height = 512; const c = cv.getContext('2d');
+        c.drawImage(crossTreeCanvas(o, o.seed), 0, 0); c.drawImage(crossTreeCanvas(o, o.seed + 101), 0, 256);
         const tex = new THREE.CanvasTexture(cv); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-        return tex;
-        };
+        const w = o.W / 256, P = [], UV = [], C = [], I = [], dark = new THREE.Color(0xd2d8cc);
+        [[0, 0.5, 1, 1], [Math.PI / 2, 0, 0.5, dark.r]].forEach(([ry, v0, v1, sh], k) => {
+          const cs = Math.cos(ry), sn = Math.sin(ry), b = k * 4, col = k ? dark : new THREE.Color(1, 1, 1);
+          for (const [u, y] of [[-0.5, 0], [0.5, 0], [-0.5, 1], [0.5, 1]]) { P.push(u * w * cs, y, -u * w * sn); UV.push(u + 0.5, v0 + (v1 - v0) * y); C.push(col.r, col.g, col.b); }
+          I.push(b, b + 1, b + 2, b + 2, b + 1, b + 3);
+        });
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.setIndex(I); geo.computeVertexNormals(); geo.computeBoundingSphere();
+        const mat = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, fog: true });
+        return { o, geo, mat };
+      });
+      return XTREE;
+    }
+    function makeBoard() {
+      const T = (color, extra) => new THREE.MeshToonMaterial(Object.assign({ color, gradientMap: toonGrad }, extra || {}));
+      const trunkMat = T(0x7a5a3c), leafMat = T(0x3f8f4f), backWood = T(0x5b3a1f), sideWood = T(0x8a5a32), nailMat = T(0x55585e);
+      const leafInk = new THREE.MeshBasicMaterial({ color: 0x1d3a24, side: THREE.BackSide });
+      const ink = new THREE.MeshBasicMaterial({ color: 0x1d1f26, side: THREE.BackSide });
+      const planks = [], solid = [], trees = [];
+      // A tree just like the others in the world, with a sign nailed to the trunk
+      function tree(kind) {
+        const g = new THREE.Group(); scene.add(g);
+        const k = TREE_K;
+        const kit = xtreeKit()[0], trunk = new THREE.Mesh(kit.geo, kit.mat); trunk.scale.setScalar(8 * k); trunk.position.y = -0.05; trunk.rotation.y = Math.PI / 4; g.add(trunk); noShadow.push(trunk);
+        const leaf = new THREE.Object3D(); g.add(leaf);   // (the painted tree is one piece; kept so the blast code still has its two parts)
+        const sign = new THREE.Group(); sign.scale.setScalar(SIGN_S); sign.position.set(0, 1.5, 0.42); g.add(sign);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(5.0, 3.5, 0.12), backWood); back.position.set(0, -0.12, -0.02); sign.add(back);
+        const backInk = new THREE.Mesh(back.geometry, ink); backInk.scale.setScalar(1.02); back.add(backInk);
+        for (const [x, y] of [[-2.3, 1.45], [2.3, 1.45], [-2.3, -1.7], [2.3, -1.7]]) { const n = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.06, 8), nailMat); n.rotation.x = Math.PI / 2; n.position.set(x, y, 0.06); sign.add(n); }
+        solid.push(trunk, leaf, back);
+        const tr = { g, sign, trunk, leaf, kind };
+        trees.push(tr);
+        return tr;
+      }
+      function plank(tr, w, h, cx, cy, kind, data) {
+        const pivot = new THREE.Group(); pivot.position.set(cx, cy + h / 2 - 0.06, 0.09); tr.sign.add(pivot);
+        const cv = document.createElement('canvas'); cv.width = Math.round(w * PX); cv.height = Math.round(h * PX);
+        const tex = sharpTex(cv, true); tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;   // smooth filtering; the 1080p text layer keeps it sharp tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;
+        const front = new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGrad, emissive: 0x000000 });
+        const paperEdge = T(0xe9e7e1);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), [paperEdge, paperEdge, paperEdge, paperEdge, front, paperEdge]);
+        mesh.position.y = -(h / 2 - 0.06); pivot.add(mesh); mesh.layers.set(TEXT_LAYER);
+        const edge = new THREE.Mesh(mesh.geometry, ink); edge.position.copy(mesh.position); edge.scale.set(1.025, 1.06, 1.15); pivot.add(edge);
+        const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 8), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(0, 0, 0.05); pivot.add(nail);
+        const pl = Object.assign({ tree: tr, pivot, mesh, front, cv, ctx: cv.getContext('2d'), tex, w, h, kind, seed: planks.length + 3, ang: 0, av: 0, push: 0, pv: 0 }, data || {});
+        mesh.userData.plank = pl; planks.push(pl); drawPlank(pl); return pl;
+      }
+      const menu = tree('menu');
+      plank(menu, 3.6, 0.6, 0, 1.2, 'title', { text: 'AIM TRAINER' });
+      Object.keys(MODES).forEach((m, i) => plank(menu, 1.08, 0.52, -1.74 + i * 1.16, 0.5, 'mode', { m, act: () => { G.mode = m; drawBoard(); renderMenu(); } }));
+      plank(menu, 3.2, 0.56, 0, -0.18, 'start', { act: () => { if (G.phase === 'idle') setTimeout(() => { if (G.phase === 'idle') startRound(); }, 260); } });
+      [['l', 'Left sens', -0.78], ['r', 'Right sens', -1.2], ['z', 'Zoom sens', -1.62]].forEach(([k, label, y]) => {
+        plank(menu, 1.5, 0.38, -1.5, y, 'label', { text: label });
+        plank(menu, 0.5, 0.38, -0.35, y, 'minus', { text: '−', k, act: () => { sens[k] = sensStep(sens[k], -1); drawBoard(); renderMenu(); } });
+        plank(menu, 1.0, 0.38, 0.5, y, 'value', { k });
+        plank(menu, 0.5, 0.38, 1.4, y, 'plus', { text: '+', k, act: () => { sens[k] = sensStep(sens[k], 1); drawBoard(); renderMenu(); } });
+      });
+      const lead = tree('lead');
+      plank(lead, 4.6, 3.1, 0, -0.12, 'leader');
+      board = { trees, menu, lead, planks, solid, hover: null, chips: [], ray: new THREE.Raycaster(), boom: null };
+      board.ray.layers.enableAll();
+      // the signs skip the PS1 filter: no vertex snap, and the whole board (not just the paper) also draws in the sharp
+      // full-resolution text layer whenever the signs are in view (its PS1 copy stays for far away and during runs)
+      for (const tr of trees) tr.sign.traverse(o => {
+        if (!o.isMesh) return;
+        if (o.layers.mask !== (1 << TEXT_LAYER)) o.layers.enable(TEXT_LAYER);
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) { m.userData.noSnap = true; m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -2; m.needsUpdate = true; }
+      });
+      // ---- test trees: the classic PS1 "cross tree". The whole tree (trunk included) is painted on one cut-out image,
+      //      put on two flat panels crossed in an X
+      function crossTree(x, z, o) {
+        const W = o.W, H = 256;
+        const paint = seed => { const tex = new THREE.CanvasTexture(crossTreeCanvas(o, seed)); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; return tex; };
         const g = new THREE.Group(), y0 = heightAt(x, z), TH = o.height, TW = TH * W / H; g.position.set(x, y0, z); scene.add(g);
         const crown = new THREE.Group(); g.add(crown); noShadow.push(crown);   // cut-out panels cast no (square) shadows
         for (const [ry, col, sd] of [[0, 0xffffff, o.seed], [Math.PI / 2, 0xd2d8cc, o.seed + 101]]) {   // the X: two panels, each its own painting, one a shade darker
@@ -6053,12 +6171,7 @@ bool inVoid(vec3 p) {
         solidTrees.push({ g, x, z, k: 1, r: 0.28, h: TH, y0, kind: 'pillar', alive: true });
         return g;
       }
-      // the tall, dense spruce
-      crossTree(-5.2, -1.5, { seed: 11, W: 128, height: 10.5, bare: 0.3, trunk: 4.5, step: 2.5, shape: 0.85, puff: 4, stray: 0.08, gaps: 0.1, holes: 16, turn: 0.35,
-        greens: ['#0c1a0e', '#142815', '#1d361b', '#284622', '#34562b', '#476b37'] });
-      // a fatter, puffier, scragglier one beside it
-      crossTree(-9.6, 0.6, { seed: 29, W: 176, height: 9.8, bare: 0.27, trunk: 5.5, step: 3.6, shape: 0.7, puff: 9, stray: 0.3, gaps: 0.18, holes: 26, turn: 1.1,
-        greens: ['#0d1c0f', '#162c16', '#20391d', '#2c4b25', '#3b5f30', '#53773e', '#68884a'] });
+      // (the two test trees that stood left of the boards are gone; every tree in the world is a cross tree now)
     }
     function placeTree(tr, fwd, side) {
       const yaw = s.yaw, f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), rgt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
@@ -6769,7 +6882,7 @@ bool inVoid(vec3 p) {
     function sfxShot(kind) {
       if (!actx) return;
       try {
-        const t0 = actx.currentTime, out = actx.destination;
+        const t0 = actx.currentTime, out = OUT();
         const env = (node, peak, att, dec, start) => { const g = actx.createGain(); g.gain.setValueAtTime(0.0001, start); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + att); g.gain.exponentialRampToValueAtTime(0.0001, start + att + dec); node.connect(g); g.connect(out); };
         const nz = (filter, freq, q, peak, att, dec, start) => { const n = noise(), f = actx.createBiquadFilter(); f.type = filter; f.frequency.value = freq; if (q) f.Q.value = q; n.connect(f); env(f, peak, att, dec, start); n.start(start, Math.random() * 1.5); n.stop(start + att + dec + 0.05); };
         const tone = (type, f0, f1, peak, dec, start) => { const o = actx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, start); o.frequency.exponentialRampToValueAtTime(f1, start + dec); env(o, peak, 0.002, dec, start); o.start(start); o.stop(start + dec + 0.05); };
@@ -6795,7 +6908,7 @@ bool inVoid(vec3 p) {
         nz('lowpass', o.lp, 0, o.vol * 1.3, 0.002, o.dur, t0);
         tone('sine', o.thump, o.thump * 0.35, o.vol * 1.4, o.td, t0);
         nz('lowpass', 600, 0, o.vol * 0.35, 0.02, o.tail, t0 + 0.01);
-        if (o.echo) nz('lowpass', 450, 0, o.vol * 0.16, 0.03, o.tail * 0.8, t0 + 0.3);
+        if (o.echo && FOREST < 0.9) nz('lowpass', 450, 0, o.vol * 0.16 * (1 - FOREST), 0.03, o.tail * 0.8, t0 + 0.3);   // the valley's slap-back echo: gone in the forest
         if (o.zap) tone('square', 1700, 480, o.vol * 0.22, 0.06, t0);
         nz('bandpass', 3400, 5, o.vol * 0.3, 0.001, 0.015, t0);   // mechanism click
       } catch (_) {}
@@ -7498,9 +7611,9 @@ bool inVoid(vec3 p) {
     // live tuning from the in-truck sliders, applied on top of the values above
     const RC_BASE = { pitchDamp: RC.pitchDamp, rollDamp: RC.rollDamp, m: RC.m, I: RC.I.slice(), g: RC.g, cComp: RC.cComp, cReb: RC.cReb, cTyre: RC.cTyre, bodyC: RC.bodyC, cBump: RC.cBump, cCompHi: RC.cCompHi, rearSteer: RC.rearSteer, grip: RC.grip, steerMax: RC.steerMax, w0: RC.w0, Tstall: RC.Tstall, Tlim: RC.Tlim, spinLoss: RC.spinLoss, spinLossF: RC.spinLossF, gripF: RC.gripF, slideMax: RC.slideMax };
     const TUNE_KEY = 'mcon-truck-tune';
-    const TUNE_DEF = { driftLock: 75, driftForgive: 0.15, airRev: true, airRevDelay: 0.5, legacyCar: false, legacyV2: true, brakeHoldEnd: 1, counterBrakeEnd: true, revMph: 20, headSmooth: 60, seatBack: 0, liftEnd: true, bakedRefl: true, winShards: true, winShardSize: 100, insideFov: 120, headStab: 60, headPitch: 0, headTrack: 100, headH: 0, priusCam: 60, driftPast: 35, straightDrift: true, hsStab: 100, landSlideOn: true, landSlide: 60, landSlideT: 0.8, glideDown: 15, rollGrip: 100, wheelieTurn: 170, driftAccel: 100, lowGripTrig: 30, surgeTurnFree: 0, surgeTurn: 0, airFall: 135, landCatch: 190, bBoostOn: true, bBoost: 24, bBoostBuild: 2.1, bBoostDur: 0.6, driftEase: 0, surgeTime: 0.3, driftMinAng: 12, dustCloud: 100, enginePitch: 160, speedOn: false, speedAll: 100, camDriftFov: 25, camDrift: 85, camDist: 100, camFollow: 100, driftFast: 150, lowGrip: 110, lowGripOn: false, tapOut: true, fadeOn: true, fadeT: 1, trigHud: false, driftMode: 2, elev: 100, elevOn: false, ail: 100, ailOn: false, surge: 32, surgeOn: true, softDrift: 15, softOn: true, driftTrac: 160, driftSpeed: 50, gearsOn: false, bDrift: false, driftBoost: 15, driftBoostOn: false, turboOn: false, airSpin: 340, turbo: 30, topSpin: 16, topSpinOn: true, spinCruise: true, planeOn: 100, planeOff: 50, bounce: 100, gravity: 100, weight: 100, wheelie: 110, rsOn: true, roost: 210, grip: 1.55, steer: 40, rpm: 100, punch: 300, slide: 100, slideOn: false, drift: 85, glide: 60, glideOn: true };   // your setup, baked in   // the user's own tuning (2026-11-05): the defaults every copy starts from
+    const TUNE_DEF = { driftLock: 75, driftForgive: 0.15, airRev: true, airRevDelay: 0.5, legacyCar: false, legacyV2: true, brakeHoldEnd: 1, counterBrakeEnd: true, revMph: 20, headSmooth: 60, seatBack: 0, liftEnd: true, bakedRefl: true, winShards: true, winShardSize: 100, insideFov: 120, headStab: 60, headPitch: 0, headTrack: 100, headH: 0, priusCam: 60, driftPast: 35, straightDrift: true, hsStab: 100, landSlideOn: true, landSlide: 60, landSlideT: 0.8, glideDown: 15, rollGrip: 100, wheelieTurn: 170, driftAccel: 100, lowGripTrig: 30, surgeTurnFree: 0, surgeTurn: 0, airFall: 135, landCatch: 190, bBoostOn: true, bBoost: 24, bBoostBuild: 2.1, bBoostDur: 0.6, driftEase: 0, surgeTime: 0.3, driftMinAng: 12, dustCloud: 100, enginePitch: 160, speedOn: false, speedAll: 100, camDriftFov: 25, camDrift: 85, camDist: 100, camFollow: 100, driftFast: 150, lowGrip: 110, lowGripOn: false, tapOut: true, fadeOn: true, fadeT: 1, trigHud: false, driftMode: 2, elev: 100, elevOn: false, ail: 100, ailOn: false, surge: 32, surgeOn: true, softDrift: 15, softOn: true, driftTrac: 160, driftSpeed: 50, gearsOn: false, bDrift: false, driftBoost: 15, driftBoostOn: true, turboOn: false, airSpin: 340, turbo: 30, topSpin: 16, topSpinOn: true, spinCruise: true, planeOn: 100, planeOff: 50, bounce: 100, gravity: 100, weight: 100, wheelie: 110, rsOn: true, roost: 210, grip: 1.55, steer: 40, rpm: 100, punch: 300, slide: 100, slideOn: false, drift: 85, glide: 60, glideOn: true, priusHD: true };   // your setup, baked in   // the user's own tuning (2026-11-05): the defaults every copy starts from
     const TUNE = Object.assign({}, TUNE_DEF);
-    try { const o = JSON.parse(localStorage.getItem(TUNE_KEY) || '{}'); if (!('trigHud' in o)) { delete o.elevOn; delete o.ailOn; } Object.assign(TUNE, o); if (!o.legacyV2) { TUNE.legacyCar = true; TUNE.legacyV2 = true; } if (!o.bakedV6) { Object.assign(TUNE, TUNE_DEF); TUNE.bakedV1 = TUNE.bakedV2 = TUNE.bakedV3 = TUNE.bakedV6 = true; try { localStorage.setItem(TUNE_KEY, JSON.stringify(TUNE)); } catch (_) {} } } catch (_) {}
+    try { const o = JSON.parse(localStorage.getItem(TUNE_KEY) || '{}'); if (!('trigHud' in o)) { delete o.elevOn; delete o.ailOn; } Object.assign(TUNE, o); if (!o.legacyV2) { TUNE.legacyCar = true; TUNE.legacyV2 = true; } if (!o.bakedV7) { Object.assign(TUNE, TUNE_DEF); TUNE.bakedV1 = TUNE.bakedV2 = TUNE.bakedV3 = TUNE.bakedV6 = TUNE.bakedV7 = true; try { localStorage.setItem(TUNE_KEY, JSON.stringify(TUNE)); } catch (_) {} } } catch (_) {}
     function tuneApply() {
       RC.grip = RC_BASE.grip * TUNE.grip;
       // bounciness: less damping in the shocks and tyres = more bounce (100% = as tuned)
@@ -8377,6 +8490,7 @@ bool inVoid(vec3 p) {
         PR.lt += (dk - PR.lt) * Math.min(1, dt * (dk ? 6 : 2)); const L = on ? PR.lt : 0;
         PR.bk += ((K.brakeLit && on ? 1 : 0) - PR.bk) * Math.min(1, dt * 18);
         SHU.uHLi.value = L * 2.2;
+        { const gh = garage.hl; if (gh) { SHU.uDoor.value.set(gh.x, gh.y, gh.z, garage.door && garage.door.visible && garage.o < 0.02 && !(garage.broken > 0) ? 1 : 0); SHU.uDoorS.value.set(gh.hw, gh.h, gh.sec, gh.wall); } }
         if (L > 0.001) { K.g.updateMatrixWorld(true); PR.beams[0].getWorldPosition(SHU.uHLa.value); PR.beams[1].getWorldPosition(SHU.uHLb.value);
           SHU.uHLd.value.set(0, -0.09, -1).applyQuaternion(K.g.quaternion).normalize(); }
         if (PR.headM) PR.headM.emissive.setRGB(1.4 * L, 1.35 * L, 1.2 * L);
@@ -9420,6 +9534,7 @@ bool inVoid(vec3 p) {
       return hd < 1.7 * k * (1 - (y - 2.2 * k) / (4.2 * k)) + pad;
     }
     const treeDebris = [];
+    function setX(tr, show) { const im = xTrees[tr.v]; im.setMatrixAt(tr.idx, show ? tr.m : new THREE.Matrix4().makeScale(0, 0, 0)); im.instanceMatrix.needsUpdate = true; }
     function setInst(tr, show) {
       const z0 = new THREE.Matrix4().makeScale(0, 0, 0);
       instTrees.trunks.setMatrixAt(tr.idx, show ? tr.tm : z0);
@@ -9448,7 +9563,7 @@ bool inVoid(vec3 p) {
         beep(110, 0.35, 'sawtooth', 0.09, 40); return;
       }
       (tr.targets || []).forEach(blowTarget);
-      if (tr.kind === 'inst') setInst(tr, false); else tr.g.visible = false;
+      if (tr.kind === 'inst') setInst(tr, false); else if (tr.kind === 'xinst') setX(tr, false); else tr.g.visible = false;
       const base = new THREE.Vector3(tr.x, tr.y0, tr.z), k = tr.k;
       const bark = new THREE.MeshToonMaterial({ color: 0x7a5a3c }), pine = new THREE.MeshToonMaterial({ color: 0x3f8f4f });
       const piece = (geo, mat, y, sc) => {
@@ -9458,8 +9573,9 @@ bool inVoid(vec3 p) {
       };
       piece(new THREE.CylinderGeometry(0.22 * k, 0.3 * k, 1.1 * k, 7), bark, 0.6 * k, 1);
       piece(new THREE.CylinderGeometry(0.2 * k, 0.24 * k, 1.1 * k, 7), bark, 1.7 * k, 1);
-      for (let i = 0; i < 4; i++) piece(new THREE.ConeGeometry(0.9 * k, 1.6 * k, 7), pine, (2.8 + i * 0.9) * k, 0.7 + Math.random() * 0.5);
-      shards(base.clone().add(new THREE.Vector3(0, 2.5 * k, 0)), [0x3f8f4f, 0x2d4a30, 0x7a5a3c, 0x5c4630], 26, 9, 0.18);
+      if (tr.h) shards(base.clone().add(new THREE.Vector3(0, tr.h * 0.45, 0)), [0x1d361b, 0x284622, 0x34562b, 0x3b2a1d, 0x56402c], Math.min(70, 26 + tr.h), 9 + tr.h * 0.25, 0.18 + tr.h * 0.006);   // a painted spruce: a burst of needles
+      else { for (let i = 0; i < 4; i++) piece(new THREE.ConeGeometry(0.9 * k, 1.6 * k, 7), pine, (2.8 + i * 0.9) * k, 0.7 + Math.random() * 0.5);
+      shards(base.clone().add(new THREE.Vector3(0, 2.5 * k, 0)), [0x3f8f4f, 0x2d4a30, 0x7a5a3c, 0x5c4630], 26, 9, 0.18); }
       beep(140, 0.3, 'sawtooth', 0.08, 50);
     }
     function updateTrees(dt) {
@@ -9474,7 +9590,7 @@ bool inVoid(vec3 p) {
       for (const tr of solidTrees) {
         if (tr.alive || tr.kind === 'board') continue;
         tr.regrow -= dt;
-        if (tr.regrow <= 0 && Math.hypot(s.px - tr.x, s.pz - tr.z) > 3) { tr.alive = true; if (tr.kind === 'inst') setInst(tr, true); else tr.g.visible = true; }
+        if (tr.regrow <= 0 && Math.hypot(s.px - tr.x, s.pz - tr.z) > 3) { tr.alive = true; if (tr.kind === 'inst') setInst(tr, true); else if (tr.kind === 'xinst') setX(tr, true); else tr.g.visible = true; }
       }
     }
     // the ground under the player: terrain, or the crate's lid if you're over it and above it
@@ -9980,10 +10096,9 @@ bool inVoid(vec3 p) {
       const trees = [];
       function tree(x, z, k) {
         const g = new THREE.Group(); g.position.set(x, heightAt(x, z), z); scene.add(g);
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.2, 7), trunkMat); trunk.scale.setScalar(k); trunk.position.y = 1.1 * k; g.add(trunk);
-        const leaf = new THREE.Mesh(new THREE.ConeGeometry(1.7, 4.2, 8), leafMat); leaf.scale.setScalar(k); leaf.position.y = 4.3 * k; g.add(leaf);
-        leaf.add(new THREE.Mesh(new THREE.ConeGeometry(1.7, 4.2, 8).scale(1.08, 1.04, 1.08), leafInk));
-        const tr = { g, x, z, k, y0: heightAt(x, z), kind: 'group', alive: true }; trees.push(tr); solidTrees.push(tr); return tr;
+        const kit = xtreeKit()[Math.floor(rnd2() * 3)], TH = 7.5 * k, pm = new THREE.Mesh(kit.geo, kit.mat);   // a painted cross tree
+        pm.scale.setScalar(TH); pm.position.y = -0.05; pm.rotation.y = rnd2() * 6; pm.userData.noStick = true; g.add(pm); noShadow.push(pm);
+        const tr = { g, x, z, k, r: Math.max(0.2, kit.o.trunk * TH / 256), h: TH, y0: heightAt(x, z), kind: 'group', alive: true }; trees.push(tr); solidTrees.push(tr); return tr;
       }
       // scatter trees through the area behind you, keeping the crate clear
       for (let i = 0; i < 12; i++) {
@@ -10014,7 +10129,7 @@ bool inVoid(vec3 p) {
         const dist = Math.hypot(tr.x, tr.z - 6);
         const r = 0.42 + Math.max(0, dist - 30) * 0.005, h = (1.3 + rnd2() * 0.5) * tr.k;
         const w = new THREE.Group(); w.position.set(tr.x, heightAt(tr.x, tr.z) + h, tr.z); w.rotation.y = Math.atan2(0 - tr.x, 6 - tr.z); scene.add(w);
-        const pivot = new THREE.Group(); pivot.position.z = 0.3 * tr.k + 0.05; w.add(pivot);
+        const pivot = new THREE.Group(); pivot.position.z = (tr.r || 0.3 * tr.k) + 0.05; w.add(pivot);
         const disc = targetDisc(r); disc.rotation.x = Math.PI / 2; pivot.add(disc);
         const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.08, 8), nailMat); nail.rotation.x = Math.PI / 2; nail.position.z = 0.04; pivot.add(nail);
         w.updateMatrixWorld(true);
@@ -10034,7 +10149,7 @@ bool inVoid(vec3 p) {
         })();
         const r = 0.4, h = 0.85 * tr.k;
         const w = new THREE.Group(); w.position.set(tr.x, heightAt(tr.x, tr.z) + h, tr.z); w.rotation.y = Math.atan2(0 - tr.x, 6 - tr.z) + 1.1; scene.add(w);
-        const pivot = new THREE.Group(); pivot.position.z = 0.3 * tr.k + 0.05; w.add(pivot);
+        const pivot = new THREE.Group(); pivot.position.z = (tr.r || 0.3 * tr.k) + 0.05; w.add(pivot);
         const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.06, 32), [rimMat, new THREE.MeshBasicMaterial({ map: blueTex }), rimMat]);
         disc.rotation.x = Math.PI / 2; pivot.add(disc);
         w.updateMatrixWorld(true);
@@ -10053,7 +10168,7 @@ bool inVoid(vec3 p) {
         })(); gTex.needsUpdate = true;
         const r = 0.4, h = 1.0 * tr.k;
         const w = new THREE.Group(); w.position.set(tr.x, heightAt(tr.x, tr.z) + h, tr.z); w.rotation.y = Math.atan2(0 - tr.x, 6 - tr.z) - 1.1; scene.add(w);
-        const pivot = new THREE.Group(); pivot.position.z = 0.3 * tr.k + 0.05; w.add(pivot);
+        const pivot = new THREE.Group(); pivot.position.z = (tr.r || 0.3 * tr.k) + 0.05; w.add(pivot);
         const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.06, 32), [rimMat, new THREE.MeshBasicMaterial({ map: gTex }), rimMat]);
         disc.rotation.x = Math.PI / 2; pivot.add(disc);
         w.updateMatrixWorld(true);
@@ -10546,7 +10661,9 @@ bool inVoid(vec3 p) {
             const base = mats[bp.mi], on = base.clone(); on.emissive = new THREE.Color(0x3a6a10);
             const ch = letterAt[bp.pi], top = (hi[2] - c[2]) * sc;
             let lmat = null; if (ch) { const tex = sharpTex(decalLetter(ch), true); lmat = new THREE.MeshPhongMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, specular: 0xbbbbbb, shininess: 90, emissive: 0x0b0b0d }); }
+            const back = (lo[2] - c[2]) * sc;
             list.push({ make: () => { const m = new THREE.Mesh(geo, base); m.userData.base = base; m.userData.on = on;
+              { const h = new THREE.Mesh(BTN_HALO.geo || (BTN_HALO.geo = new THREE.PlaneGeometry(3.4, 3.4)), btnHaloMat()); h.position.z = back - 0.08; h.renderOrder = 1; h.userData.noStick = true; m.add(h); }   // a soft glow behind it, so it stands out
               if (lmat) { const d = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), lmat); d.position.z = top + 0.02; d.renderOrder = 2; m.add(d); }
               return m; } });
           }
