@@ -36,6 +36,9 @@ Everything lives in `index.html` (~4.3 MB, ~11k lines): HTML, CSS, one big scrip
 | Aim-trainer sign trees | `placeTreeAt(board.menu…` / `placeBoard()`; sign text layer `TEXT_LAYER` |
 | Sign visibility for the text pass | `function signsInView()` (90 m, idle phase only) |
 | Vehicle switch | `setVehicle('prius' | 'truck')`, vehicle object `K` (`K.S` = physics state) |
+| M Island (past the tunnel) | `const ISK =` (Josh's drawing px → world, 3.1 m/px), `const ISLE =` (shore distance field), `isleU`/`isleH`, `NECK` |
+| Island track | `const TRACK = (() =>` — `LAP` points tagged L dirt / A air / W water, `F` jumps (kicker/landing), `LOOP`; `trackAt` skips air/water |
+| Island build + per frame | `function buildPeninsula(` (ground tiles `IGRID`, ribbon, buoys, `buildLoops`), `updateIsle` (hides far pieces), `loopRide` (the wooden loop) |
 | Controller | two `navigator.getGamepads()` reads, both wrapped in try/catch (see below) |
 
 ## Hard-won rules
