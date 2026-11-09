@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.pyc
+node_modules/
+# local test copies / screenshots
+tools/test/out/
+test.html
+three.min.js
+*.png
