@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v019 · Nov 6, 4:08 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v021 · Nov 9, 7:06 PM</span>
       </div>
 
       <div class="card sliders">
@@ -4679,18 +4679,52 @@ function buildPriusModel(THREE, options) {
         title.userData.prop = pr; props.push(pr);
       }
 
+      // ---- gazebo on the bank: an octagonal deck on a skirt, eight posts with plinths, a beam round the top with
+      // braces, spindle railings on seven sides (the eighth opens toward the lake, with steps), benches at the back.
+      // Welded in with the cabin, so it costs no extra draw calls.
+      const gzx = 22, gzz = LAKE.z + 29, gy = heightAt(gzx, gzz);
+      { const ox = gzx - X, oy = gy - y0, oz = gzz - Z, P8 = Math.PI / 8, Rp = 2.35, A = Rp * Math.cos(P8), L = 2 * Rp * Math.sin(P8), DT = 0.4, BT = 2.75;
+        const G = (geo, x, y, z, ry, rx, rz, key, solid) => put(geo, TR(ox + x, oy + y, oz + z, ry, rx, rz), key, solid);
+        const tan = m => [Math.cos(m), -Math.sin(m)], rad = m => [Math.sin(m), Math.cos(m)];
+        const ent = ((Math.round(Math.atan2(LAKE.x - gzx, LAKE.z - gzz) / (Math.PI / 4)) % 8) + 8) % 8;   // the open side faces the lake
+        let lo = 0; for (let i = 0; i < 8; i++) { const a = P8 + i * Math.PI / 4; lo = Math.min(lo, heightAt(gzx + Math.sin(a) * 2.7, gzz + Math.cos(a) * 2.7) - gy); }
+        G(new THREE.CylinderGeometry(2.62, 2.62, DT - 0.08 - (lo - 0.3), 8), 0, (DT - 0.08 + lo - 0.3) / 2, 0, P8, 0, 0, 'woodDark', false);   // skirt down into the slope
+        G(new THREE.CylinderGeometry(2.75, 2.75, 0.08, 8), 0, DT - 0.04, 0, P8, 0, 0, 'floor', false);   // the boards
+        for (let i = 0; i < 8; i++) {
+          const pa = P8 + i * Math.PI / 4, m = i * Math.PI / 4, [rx, rz] = rad(m), [tx, tz] = tan(m);
+          G(new THREE.BoxGeometry(0.16, BT - DT, 0.16), Math.sin(pa) * Rp, (DT + BT) / 2, Math.cos(pa) * Rp, pa, 0, 0, 'trim', false);   // post
+          G(new THREE.BoxGeometry(0.26, 0.18, 0.26), Math.sin(pa) * Rp, DT + 0.09, Math.cos(pa) * Rp, pa, 0, 0, 'trim', false);   // plinth
+          solidCircles.push({ x: gzx + Math.sin(pa) * Rp, z: gzz + Math.cos(pa) * Rp, r: 0.1, top: gy + BT });
+          G(new THREE.BoxGeometry(L + 0.16, 0.2, 0.12), rx * A, BT - 0.1, rz * A, m, 0, 0, 'trim', false);   // beam round the top
+          for (const sg of [1, -1]) { const d = sg * (L / 2 - 0.08 - 0.17); G(new THREE.BoxGeometry(0.06, 0.48, 0.06), rx * A + tx * d, BT - 0.2 - 0.17, rz * A + tz * d, m, 0, sg * Math.PI / 4, 'trim', false); }   // braces
+          if (i === ent) {   // steps down to the grass
+            const er = 2.75 * Math.cos(P8), hg = heightAt(gzx + rx * (er + 0.5), gzz + rz * (er + 0.5)) - gy, drop = DT - hg, n = Math.max(1, Math.min(4, Math.round(drop / 0.2) - 1));
+            for (let k = 1; k <= n; k++) { const top = DT - k * drop / (n + 1), r0 = er + 0.15 + (k - 1) * 0.3, bot = hg - 0.25; G(new THREE.BoxGeometry(1.3, top - bot, 0.3), rx * r0, (top + bot) / 2, rz * r0, m, 0, 0, 'floor', false); }
+            continue;
+          }
+          const hl = L / 2 - 0.08;
+          G(new THREE.BoxGeometry(2 * hl, 0.07, 0.1), rx * A, DT + 0.95, rz * A, m, 0, 0, 'trim', true);   // top rail
+          G(new THREE.BoxGeometry(2 * hl, 0.06, 0.08), rx * A, DT + 0.13, rz * A, m, 0, 0, 'trim', true);   // bottom rail
+          const c = [ox + rx * A, oz + rz * A], q = (t, y) => [c[0] + tx * t, oy + y, c[1] + tz * t];
+          railQuad(q(-hl, DT + 0.16), q(hl, DT + 0.16), q(hl, DT + 0.915), q(-hl, DT + 0.915));   // spindles
+          if ((i - ent + 8) % 8 >= 3 && (i - ent + 8) % 8 <= 5) {   // benches along the back three sides
+            const br = A - 0.27; G(new THREE.BoxGeometry(L - 0.36, 0.05, 0.36), rx * br, DT + 0.43, rz * br, m, 0, 0, 'wood', false);
+            for (const sg of [1, -1]) { const d = sg * (L / 2 - 0.35); G(new THREE.BoxGeometry(0.05, 0.41, 0.3), rx * br + tx * d, DT + 0.2, rz * br + tz * d, m, 0, 0, 'woodDark', false); }
+          }
+        }
+        G(new THREE.CylinderGeometry(3.3, 3.3, 0.16, 8, 1, true), 0, BT + 0.08, 0, P8, 0, 0, 'trim', false);   // fascia under the roof's edge
+        G(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 6), 0, BT + 1.75, 0, 0, 0, 0, 'trim', false);   // finial stem
+      }
+
       // ---- weld everything into one mesh per material
       for (const k in R) { const B = R[k]; if (!B.P.length) continue; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.N, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(B.U, 2));
         const m = new THREE.Mesh(g, B.mat); m.userData.solidMesh = true; scene.add(m); if (k === 'glass' || k === 'glassLit' || k === 'emis' || k === 'emisCool' || k === 'rails') noShadow.push(m); }
 
-      // ---- gazebo on the bank
-      const gzx = 22, gzz = LAKE.z + 29, gy = heightAt(gzx, gzz), gp = new THREE.Group(); gp.position.set(gzx, gy, gzz); scene.add(gp);
-      const plat = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.7, 0.4, 8), boards); plat.position.y = 0.2; gp.add(plat);
-      for (let i = 0; i < 8; i++) { const a2 = i / 8 * Math.PI * 2 + Math.PI / 8, post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.4, 0.14), white); post.position.set(Math.sin(a2) * 2.35, 1.6, Math.cos(a2) * 2.35); gp.add(post);
-        if (i !== 0) { const rail = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.08), white); const a3 = a2 + Math.PI / 8; rail.position.set(Math.sin(a3) * 2.2, 1.2, Math.cos(a3) * 2.2); rail.rotation.y = a3 + Math.PI / 2; gp.add(rail); } }
-      const groof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.6, 8), metal); groof.position.y = 3.6; groof.rotation.y = Math.PI / 8; gp.add(groof);
-      const fin = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 4), white); fin.position.y = 4.5; gp.add(fin);
-      solidCircles.push({ x: gzx, z: gzz, r: 2.7, top: gy + 0.4, climb: true });
+      // the gazebo's roof stays its own mesh (the metal's ribs run down each face); seen from underneath too
+      { const gp = new THREE.Group(); gp.position.set(gzx, gy, gzz); scene.add(gp); const rm = metal.clone(); rm.side = THREE.DoubleSide;
+        const groof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.6, 8), rm); groof.position.y = 2.75 + 0.8; groof.rotation.y = Math.PI / 8; gp.add(groof);
+        const fin = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 4), white); fin.position.y = 2.75 + 2.0; gp.add(fin);
+        solidCircles.push({ x: gzx, z: gzz, r: 2.7, top: gy + 0.4, climb: true }); }
       // ---- little dock into the lake
       const lx = -12, lz0 = LAKE.z + 33, ltop = LAKE.y + 0.55;
       { const m = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 10), boards); m.position.set(lx, ltop - 0.09, lz0 - 5); scene.add(m); }
@@ -5111,7 +5145,7 @@ bool inVoid(vec3 p) {
       renderer.render(postScene, postCam);
     }
     // the post effects' settings (menu toggles, remembered) and their per-frame inputs: where the sun is on screen, how far into a tunnel you are
-    const CLOUD_U = { uDay: { value: 1 } };
+    const CLOUD_U = { uDay: { value: 1 }, uTime: { value: 0 }, uNoise: { value: null } };
     const FX_DEF = { rayK: 20, shadow: 30, crt: 0, grade: 100, tempW: 40, tempT: 0, speedFov: 50 };   // the house look
     const FX = { ...FX_DEF, tun: 0 };
     try { const o = JSON.parse(localStorage.getItem('mcon-fx2') || '{}'); for (const k of ['rayK', 'shadow', 'crt', 'grade', 'tempW', 'tempT', 'speedFov']) if (typeof o[k] === 'number') FX[k] = o[k]; if (!o.gradeV2) FX.grade = FX.grade > 0 ? 100 : 0; } catch (_) {}
@@ -5200,7 +5234,7 @@ bool inVoid(vec3 p) {
         FX.tun += (tgt - FX.tun) * (1 - Math.exp(-dtT / 1.1));
       }
       U.uTun.value = FX.tun; U.uRays.value = FX.rayK / 50 * RAYS_ON; U.uTemp.value = (FX.tempW + (FX.tempT - FX.tempW) * FX.tun) / 100; U.uCRT.value = FX.crt; U.uGrade.value = FX.grade / 100; U.uTime.value = performance.now() / 1000;
-      U.uNF.value.set(cam.near, cam.far); CLOUD_U.uDay.value = (1 - NIGHT) * (SN ? 0.4 : 1);
+      U.uNF.value.set(cam.near, cam.far); CLOUD_U.uDay.value = (1 - NIGHT) * (SN ? 0.4 : 1); CLOUD_U.uTime.value = performance.now() / 1000;
       _sunP.copy(SUN_DIR).multiplyScalar(2000).add(p).project(cam);
       const on = _sunP.z < 1 ? (1 - smooth(0.7, 1.6, Math.max(Math.abs(_sunP.x), Math.abs(_sunP.y)))) * (1 - NIGHT) * (SN ? 0 : 1) : 0;
       U.uSun.value.set(_sunP.x * 0.5 + 0.5, _sunP.y * 0.5 + 0.5, Math.max(0, on));
@@ -5362,14 +5396,18 @@ bool inVoid(vec3 p) {
       const cloudLight = mat => {
         const ob = mat.onBeforeCompile, ck = mat.customProgramCacheKey;
         mat.onBeforeCompile = sh => { if (ob) ob(sh);
-          sh.uniforms.uDay = CLOUD_U.uDay;
+          sh.uniforms.uDay = CLOUD_U.uDay; sh.uniforms.uTime = CLOUD_U.uTime; sh.uniforms.uNoise = CLOUD_U.uNoise;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW;').replace('#include <project_vertex>', '#include <project_vertex>\nvCW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW; uniform float uDay;')
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW; uniform float uDay; uniform float uTime; uniform sampler2D uNoise;')
             .replace('#include <fog_fragment>', [
+              // the mist churns: two layers of drifting noise, fixed to the world, thin the cloud out in places as it moves through them
+              'float cn = texture2D(uNoise, vCW.xz * 0.011 + vec2(uTime * 0.006, uTime * 0.0035)).r * 0.6 + texture2D(uNoise, vCW.xz * 0.029 - vec2(uTime * 0.009, -uTime * 0.004)).r * 0.4;',
+              'gl_FragColor.a = clamp(gl_FragColor.a * (0.3 + 1.2 * cn), 0.0, 1.0);',
               'vec3 cV = normalize(vCW - cameraPosition); float mu = dot(cV, normalize(vec3(35.0, 14.0, -95.0)));',
               'vec3 lit = mix(vec3(0.95, 0.93, 1.0), vec3(1.0, 0.95, 0.87), 0.5 + 0.5 * mu);',
               'lit += vec3(1.0, 0.72, 0.42) * pow(max(mu, 0.0), 6.0) * 0.35;',
               'gl_FragColor.rgb *= mix(vec3(1.0), lit, uDay);',
+              'gl_FragColor.rgb += vec3(1.0, 0.78, 0.5) * pow(max(mu, 0.0), 4.0) * (1.0 - gl_FragColor.a) * 0.45 * uDay;',   // thin mist lights up looking into the sun
               '#ifdef USE_FOG',
               ' float cf = smoothstep(fogNear, fogFar * 1.8, fogDepth) * 0.7;',
               ' gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor * mix(vec3(1.0), vec3(1.06, 0.95, 0.88), uDay), cf);',
@@ -5377,22 +5415,43 @@ bool inVoid(vec3 p) {
         };
         mat.customProgramCacheKey = () => (ck ? ck() : '') + '-cloud';
       };
+      // Misty clouds: each one is a stack of four faint layers a few metres apart (thick from below, a hazy band edge-on),
+      // with a soft, ragged density texture (still chunky texels) and world-fixed noise drifting through it in the shader
+      { const n = 64, cv = document.createElement('canvas'); cv.width = cv.height = n; const c = cv.getContext('2d'), im = c.createImageData(n, n);
+        const lat = []; for (let k = 0; k < 64; k++) lat.push(Math.random());   // 8 x 8 lattice, wraps so the texture tiles
+        const vn = (x, y) => { const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), L = (i, j) => lat[((i % 8 + 8) % 8) + 8 * ((j % 8 + 8) % 8)];
+          return (L(ix, iy) * (1 - sx) + L(ix + 1, iy) * sx) * (1 - sy) + (L(ix, iy + 1) * (1 - sx) + L(ix + 1, iy + 1) * sx) * sy; };
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = 0.65 * vn(x / 8, y / 8) + 0.35 * vn(x / 4, y / 4), k = (x + y * n) * 4; im.data[k] = im.data[k + 1] = im.data[k + 2] = v * 255; im.data[k + 3] = 255; }
+        c.putImageData(im, 0, 0); const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; CLOUD_U.uNoise.value = t; }
+      const LAYERS = [[3, 0.8], [0, 1.0], [-3, 0.94], [-5.5, 0.82]];   // (height offset m, size)
       for (let i = 0; i < 22; i++) {
-        const cw = 10 + Math.floor(rnd(0, 9)), ch = 6 + Math.floor(rnd(0, 6));
-        const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const c = cv.getContext('2d');
-        // random lumpy blob on the grid: a few overlapping rectangles, then trim lone corner blocks
-        const blobs = 3 + Math.floor(rnd(0, 4));
-        c.fillStyle = '#fff';
-        for (let k = 0; k < blobs; k++) {
-          const bw = 3 + Math.floor(rnd(0, cw * 0.6)), bh = 2 + Math.floor(rnd(0, ch * 0.6));
-          c.fillRect(Math.floor(rnd(0, cw - bw + 1)), Math.floor(rnd(0, ch - bh + 1)), bw, bh);
+        const cw = 10 + Math.floor(rnd(0, 9)), ch = 6 + Math.floor(rnd(0, 6)), RES = 3;   // 3 texels per 8 m block
+        const tw = cw * RES, th = ch * RES, cv = document.createElement('canvas'); cv.width = tw; cv.height = th; const c = cv.getContext('2d'), im = c.createImageData(tw, th);
+        // a few overlapping soft rectangles (in blocks), roughed up by noise, fading out well inside the edges
+        const blobs = [], nb = 3 + Math.floor(rnd(0, 4)), sd = rnd(0, 100);
+        for (let k = 0; k < nb; k++) { const bw = 3 + rnd(0, cw * 0.55), bh = 2 + rnd(0, ch * 0.55), x0 = rnd(1, Math.max(1.01, cw - 1 - bw)), y0 = rnd(1, Math.max(1.01, ch - 1 - bh)); blobs.push([x0, y0, x0 + bw, y0 + bh]); }
+        const hn = (x, y) => { const v = Math.sin(x * 12.9898 + y * 78.233 + sd) * 43758.5453; return v - Math.floor(v); };
+        const vn = (x, y) => { const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy; return (hn(ix, iy) * (1 - fx) + hn(ix + 1, iy) * fx) * (1 - fy) + (hn(ix, iy + 1) * (1 - fx) + hn(ix + 1, iy + 1) * fx) * fy; };
+        for (let py = 0; py < th; py++) for (let px = 0; px < tw; px++) {
+          const x = (px + 0.5) / RES, y = (py + 0.5) / RES; let d = 0;
+          for (const [x0, y0, x1, y1] of blobs) { const e = Math.min(x - x0, x1 - x, y - y0, y1 - y); if (e > -2.6) d = Math.max(d, smooth(-2.6, 1.4, e)); }
+          const nz = 0.6 * vn(x * 0.7, y * 0.7) + 0.4 * vn(x * 1.6 + 7, y * 1.6 + 3), a = clamp((d * (0.55 + 0.6 * nz) - 0.18) / 0.6, 0, 1), k = (px + py * tw) * 4;
+          im.data[k] = im.data[k + 1] = im.data[k + 2] = 255; im.data[k + 3] = Math.round(a * 0.92 * 255);
         }
+        c.putImageData(im, 0, 0);
         const tex = new THREE.CanvasTexture(cv);
         tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, fog: true, depthWrite: false, color: 0xffffff });   // in the haze like everything else
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.72, vertexColors: true, side: THREE.DoubleSide, fog: true, depthWrite: false, color: 0xffffff });   // in the haze like everything else
         cloudLight(mat);
-        const g = new THREE.Mesh(new THREE.PlaneGeometry(cw * BLOCK, ch * BLOCK), mat);
-        g.rotation.x = -Math.PI / 2;   // lie flat, facing the ground below
+        // the four layers, flat, welded into one mesh; alternate ones mirrored so the shapes don't line up; lower = a touch darker and cooler
+        const W = cw * BLOCK, H = ch * BLOCK, P = [], UV = [], C = [], I = [];
+        LAYERS.forEach(([dy, sc], k) => {
+          const hw = W * sc / 2, hh = H * sc / 2, ox = rnd(-0.06, 0.06) * W, oz = rnd(-0.06, 0.06) * H, b = P.length / 3, f = k % 2 === 1;
+          for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 1]]) { P.push(ox + (u * 2 - 1) * hw, dy, oz + (1 - v * 2) * hh); UV.push(f ? 1 - u : u, v); C.push(1 - 0.06 * k, 1 - 0.05 * k, 1 - 0.025 * k); }
+          I.push(b, b + 1, b + 2, b, b + 2, b + 3);
+        });
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.setIndex(I); geo.computeVertexNormals();
+        const g = new THREE.Mesh(geo, mat);
         const a = rnd(0, Math.PI * 2), r = rnd(60, 360);
         g.position.set(Math.sin(a) * r, rnd(96, 130), Math.cos(a) * r);
         g.userData.v = rnd(1.2, 3.2); g.userData.mat = mat;
