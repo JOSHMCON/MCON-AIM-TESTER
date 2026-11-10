@@ -3318,8 +3318,12 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
             rows.forEach((k, r) => {
               const i = pa.base + k, along = alongAt(k), bank = bankAt(k), sh = Math.max(T.SH, along * 1.1);
               const Wr = T.HW + Math.max(sh, bank > 0 ? T.BERM + 4 : 0) + 1.5, Rr = 1 / Math.max(1e-4, Math.abs(T.KS[i])), inside = T.KS[i] > 0 ? 1 : -1;
+              // where another bit of track is nearer (a road joining, the next leg of a hairpin) this ribbon stops at the
+              // halfway line, so neighbouring ribbons meet edge to edge instead of lying on top of each other
+              const own = (x, z) => { const q = trackAt(x, z); if (!q) return true; if (q.p !== pid) return false; const d = Math.abs(q.s - k); return Math.min(d, pa.closed ? N - d : d) < 40; };
+              const lim = [-1, 1].map(sd => { for (let jj = 1; jj <= NC * 2; jj++) { const l = sd * jj / (NC * 2) * Wr; if (!own(T.X[i] + l * T.TZ[i], T.Z[i] - l * T.TX[i])) return Math.max(0.5, (jj - 1) / (NC * 2) * Wr); } return Wr; });
               for (let j = -NC; j <= NC; j++) {
-                let l = j / NC * Wr; if (Math.sign(l) === inside && Math.abs(l) > Rr * 0.8) l = Math.sign(l) * Rr * 0.8;
+                let l = j / NC * (j < 0 ? lim[0] : lim[1]); if (Math.sign(l) === inside && Math.abs(l) > Rr * 0.8) l = Math.sign(l) * Rr * 0.8;
                 const x = T.X[i] + l * T.TZ[i], z = T.Z[i] - l * T.TX[i], y = heightAt(x, z);
                 P.push(x, y + 0.06, z); UV.push(l / 4, k / 4);
                 const a = Math.abs(l), n = nz(x, z), edge = T.HW - 1.2 + 3 * nz(z * 0.7, x * 0.7) + (along > 0.8 ? Wr : 0) + bank * (T.BERM + 4);
