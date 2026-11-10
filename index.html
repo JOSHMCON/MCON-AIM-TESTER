@@ -1377,10 +1377,11 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     // short neck of land and up a huge dirt ramp at its tip, which throws you across the water onto M Island: a big island
     // cut like the MCON "M" (three slits) with a lake, a rally track (angled berms, a gap jump, a wooden loop-the-loop)
     // and a wave-race stretch back across the sea, between buoys, to the foot of the ramp.
-    // Laid out from Josh's drawing: drawing pixels -> metres at 3.1 m per pixel; the drawing's up = +z, its right = -x.
+    // Laid out from Josh's drawing: drawing pixels -> metres at 1 m per pixel (about the old peninsula's size); the
+    // drawing's up = +z, its right = -x.
     const PEN = { x: 0, z: 725, rx: 1, rz: 1 };   // (the old peninsula is gone; these two stay so older code still runs)
     function penU(x, z) { return -1e9; }
-    const ISK = (sx, sy) => [-(sx - 452) * 3.1, 640 + (757 - sy) * 3.1];
+    const ISK = (sx, sy) => [-(sx - 452), 650 + (757 - sy)];
     const crPts = (P, n, closed) => {   // Catmull-Rom through points
       const N = P.length, get = i => closed ? P[(i + N) % N] : P[clamp(i, 0, N - 1)], out = [], segs = closed ? N : N - 1;
       for (let i = 0; i < segs; i++) {
@@ -1400,7 +1401,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         [600, 636], [540, 604], [500, 570], [464, 538], [520, 612], [558, 652], [584, 686], [586, 702], [568, 722], [500, 750], [440, 757], [400, 751], [350, 731], [300, 700],
         [240, 622], [200, 546], [170, 482], [155, 430], [164, 380], [194, 322], [234, 276], [272, 243], [340, 282]].map(p => ISK(p[0], p[1])), 10, true);
       const POND = crPts([[255, 380], [280, 356], [315, 350], [370, 360], [382, 392], [366, 435], [340, 470], [310, 480], [276, 466], [254, 452], [249, 418]].map(p => ISK(p[0], p[1])), 10, true);
-      const C = 4, x0 = -1360, z0 = 540, nx = 600, nz = 580, n1 = nx + 1, inside = new Uint8Array(n1 * (nz + 1));
+      const C = 4, x0 = -560, z0 = 520, nx = 250, nz = 230, n1 = nx + 1, inside = new Uint8Array(n1 * (nz + 1));
       for (let j = 0; j <= nz; j++) {   // even-odd fill, row by row (the lake is a hole)
         const z = z0 + j * C, xs = [];
         for (const P of [OUT, POND]) for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((a[1] > z) !== (b[1] > z)) xs.push(a[0] + (z - a[1]) / (b[1] - a[1]) * (b[0] - a[0])); }
@@ -1419,7 +1420,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       return { C, x0, z0, nx, nz, n1, U, OUT, POND };
     })();
     // the neck of land at the foot of the tunnel road, with the big ramp on its tip
-    const NECK = { hw: 46, tip: 600 };
+    const NECK = { hw: 46, tip: 622 };
     const neckU = (x, z) => z < 440 || z > 680 ? -1e9 : Math.min(NECK.hw - Math.abs(x) + 3 * Math.sin(z * 0.07), NECK.tip - z + 4 * Math.sin(x * 0.09));
     // how far inside the shore of M Island (or the neck) a point is, in metres; negative = out in the water
     function isleU(x, z) {
@@ -1444,7 +1445,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const S = (sx, sy, k) => { const p = ISK(sx, sy); return [p[0], p[1], k || 'L']; };
       // [x, z, what the stretch starting here is]: L dirt, A in the air, W on the water
       const LAP = [
-        [0, 525, 'L'], [0, 555, 'L'], [0, 594, 'A'], [0, 598, 'A'], [0, 604, 'L'],                 // the big ramp, the flight, the landing
+        [0, 545, 'L'], [0, 575, 'L'], [0, 612, 'A'], [0, 630, 'A'], [0, 648, 'L'],                 // the big ramp, the flight over the water, the landing
         S(452, 745), S(452, 700), S(449, 640), S(447, 580), S(444, 530), S(435, 512), S(418, 508), S(402, 518), S(400, 560), S(405, 610), S(403, 640),
         S(390, 655), S(365, 658), S(345, 645), S(338, 600), S(335, 545), S(325, 515),
         S(300, 500), S(255, 485), S(215, 465), S(192, 425), S(195, 375), S(215, 333), S(255, 305), S(305, 298), S(352, 315), S(380, 343),
@@ -1456,23 +1457,28 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         S(640, 250), S(642, 315), S(655, 333), S(672, 310), S(695, 250), S(715, 212), S(733, 212), S(740, 245), S(733, 300), S(742, 360),
         S(775, 410), S(820, 445, 'W'),                                                              // off the island: wave race
         S(850, 478, 'W'), S(868, 535, 'W'), S(885, 588, 'W'), S(870, 655, 'W'),
-        [-1190, 790, 'W'], [-960, 620, 'W'], [-700, 530, 'W'], [-450, 488, 'W'], [-260, 468, 'W'], [-150, 466, 'W'],
-        [-100, 474, 'L'], [-56, 480, 'L'], [-22, 488, 'L'], [-5, 498, 'L'], [0, 510, 'L']           // up the beach, square on to the foot of the ramp
+        [-380, 640, 'W'], [-262, 556, 'W'], [-172, 504, 'W'], [-120, 486, 'W'],
+        [-75, 494, 'L'], [-36, 508, 'L'], [-10, 524, 'L'], [0, 538, 'L']                            // up the beach, square on to the foot of the ramp
       ];
       const SPUR = [[0, 412, 'L'], [0, 440, 'L'], [0, 470, 'L'], [0, 500, 'L'], [0, 515, 'L']];   // straight down from the tunnel
       const paths = [
         { pts: LAP, closed: true, F: [
-          { at: [0, 525], kind: 'kicker', H: 20, Lt: 55, Lb: 12 },                                 // the big ramp: 20 m tall, lip about 36 degrees
-          { at: [0, 602], kind: 'landing', H: 22, Lu: 22, Ld: 80 },                                // its landing: a tall mound at the water's edge, steep down the far side
-          { at: ISK(392, 360), kind: 'kicker', H: 5, Lt: 22, Lb: 5 },                              // the gap jump...
-          { after: 62, kind: 'landing', H: 5, Lu: 9, Ld: 70 }],                                    // ...and its landing
+          { at: [0, 545], kind: 'kicker', H: 20, Lt: 55, Lb: 12 },                                 // the big ramp: 20 m tall, lip about 36 degrees
+          { at: [0, 658], kind: 'landing', H: 19, Lu: 12, Ld: 27, steep: true },                   // its landing: a straight 40-degree face matched to the fall
+          { at: ISK(392, 360), kind: 'kicker', H: 4, Lt: 18, Lb: 4 },                              // the gap jump...
+          { after: 52, kind: 'landing', H: 4, Lu: 8, Ld: 50 }],                                    // ...and its landing
           LOOP: [ISK(527, 362)] },
         { pts: SPUR, closed: false, F: [] }
       ];
       const one = (f, d) => {
         if (d < 0) return 0;
         if (f.kind === 'kicker') { if (d < f.Lt) return f.H * Math.pow(d / f.Lt, 2); if (d < f.Lt + f.Lb) return f.H * 0.5 * (1 + Math.cos(Math.PI * (d - f.Lt) / f.Lb)); return 0; }
-        if (f.kind === 'landing') { if (d < f.Lu) return f.H * 0.5 * (1 - Math.cos(Math.PI * d / f.Lu)); const e = d - f.Lu; return e < f.Ld ? f.H * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld)) : 0; }
+        if (f.kind === 'landing') {
+          if (d < f.Lu) return f.H * 0.5 * (1 - Math.cos(Math.PI * d / f.Lu)); const e = d - f.Lu; if (e >= f.Ld) return 0;
+          if (!f.steep) return f.H * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld));
+          const R = 4, k = f.H / (f.Ld - R);   // straight down at slope k, rounded off over 4 m at the top and the bottom
+          return e < R ? f.H - k * e * e / (2 * R) : e > f.Ld - R ? k * (f.Ld - e) * (f.Ld - e) / (2 * R) : f.H - k * (e - R / 2);
+        }
         return 0;
       };
       const X = [], Z = [], TX = [], TZ = [], KS = [], PI = [], SI = [], KD = [], prof = [];
@@ -1503,6 +1509,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         const near = (x, z) => { let b = 0, bd = 1e18; for (let i = 0; i < N; i++) { const d = (pts[i][0] - x) ** 2 + (pts[i][1] - z) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
         let last = 0; for (const f of pa.F) { f.s = f.at ? near(f.at[0], f.at[1]) : last + f.after; last = f.s; }
         for (const f of pa.F) for (let s = f.s - 35; s < f.s + (f.Lt || 0) + (f.Lb || 0) + (f.Lu || 0) + 10; s++) KS[base + idx(s)] = 0;   // no berm tilt on or just before a jump
+        for (let i = 0; i < N; i++) if (pts[i][1] < 645) KS[base + i] = 0;   // nor anywhere on the mainland (the road down, the beach run-in)
         pa.loops = (pa.LOOP || []).map(p => ({ s: near(p[0], p[1]) }));
         const pr = new Float32Array(N * 4 + 8);
         for (let j = 0; j < pr.length; j++) { const s = j / 4; let h = 0; for (const f of pa.F) h = Math.max(h, one(f, pa.closed ? ((s - f.s) % N + N) % N : s - f.s)); pr[j] = h; }
@@ -1511,7 +1518,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const hash = new Map(), key = (cx, cz) => cx * 100003 + cz;
       for (let i = 0; i < X.length; i++) { const k = key(Math.floor(X[i] / 10), Math.floor(Z[i] / 10)); let a = hash.get(k); if (!a) hash.set(k, a = []); a.push(i); }
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (let i = 0; i < X.length; i++) { x0 = Math.min(x0, X[i]); x1 = Math.max(x1, X[i]); z0 = Math.min(z0, Z[i]); z1 = Math.max(z1, Z[i]); }
-      return { paths, X, Z, TX, TZ, KS, PI, SI, KD: Int8Array.from(KD), prof, hash, key, HW: 9, SH: 5, BERM: 5, box: { x0: x0 - 40, x1: x1 + 40, z0: z0 - 40, z1: z1 + 40 } };
+      return { paths, X, Z, TX, TZ, KS, PI, SI, KD: Int8Array.from(KD), prof, hash, key, HW: 7.5, SH: 4, BERM: 4.5, box: { x0: x0 - 40, x1: x1 + 40, z0: z0 - 40, z1: z1 + 40 } };
     })();
     // where (x, z) is relative to the nearest dirt track: s along it, l to the side (+ = left of travel), or null if far
     // away (or if the nearest bit of the lap is in the air or out on the water)
@@ -2083,6 +2090,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       if ((c < 18 || h < SEA + 1.4) && z > 470 && isleU(x, z) >= c - 0.01) { out.copy(GC.sand).lerp(GC.grav1, sp * 0.3).multiplyScalar(1.15); if (h < SEA + 0.6) out.lerp(GC.wet, 0.4); return; }   // M Island's sand
       if (c < 18 || h < SEA + 1.4) { out.copy(GC.grav1).lerp(GC.grav2, sp); if (h < SEA + 0.6) out.lerp(GC.wet, 0.6); return; }
       out.copy(GC.g1).lerp(GC.g2, nz * 0.7).lerp(GC.g3, (1 - nz) * 0.4).lerp(GC.dry, smooth(150, 300, r) * 0.25);
+      if (z > 600 && isleU(x, z) >= c - 0.01) out.lerp(GC.g3, 0.5).multiplyScalar(0.8);   // M Island: a deeper, darker green
       if (c < 30) out.lerp(GC.grav1, smooth(30, 18, c));
       { const ff = forestAt(x, z); if (ff > 0) out.lerp(groundColor.ff || (groundColor.ff = new THREE.Color(0x2c4424)), ff * 0.45); }   // the forest floor: darker, mossier
       const rk = Math.max(smooth(0.55, 0.95, slope), smooth(70, 95, h));
@@ -3265,7 +3273,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     // the island's ground: a grid that carries on from the main one (same cell size and lines, so they meet without cracks),
     // cut into tiles; tiles only draw near you (most of the island is beyond the fog anyway)
     function buildIsleGround() {
-      const cell = 1900 / 320, nx = 390, nz = 308, x0 = -950 - 60 * cell, z0 = 950, n1 = nx + 1, H = new Float32Array(n1 * (nz + 1));
+      const cell = 1900 / 320, nx = 170, nz = 70, x0 = -950 + 65 * cell, z0 = 950, n1 = nx + 1, H = new Float32Array(n1 * (nz + 1));
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const x = x0 + i * cell, z = z0 + j * cell; H[i + n1 * j] = isleU(x, z) > -60 ? heightA(x, z) : SEA - 30; }
       IGRID = { x0, z0, cell, nx, nz, h: H };
       const tmp = new THREE.Color(), TS = 40;
@@ -3448,6 +3456,21 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) d[i + w * j] = clamp(Math.round(128 + isleU(I.x0 + (i + 0.5) * C, I.z0 + (j + 0.5) * C)), 0, 255);
       const t = new THREE.DataTexture(d, w, h, THREE.LuminanceFormat, THREE.UnsignedByteType); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
       return { t, b: new THREE.Vector4(I.x0, I.z0, w * C, h * C) };
+    }
+    // M Island's woods: groves of the world's tree paintings, thick in clumps and open between, kept off the track,
+    // the beach and the ramp; mostly meadow spruces, with tall forest giants in the thickest groves
+    function isleTreePicks(picks, treeOK) {
+      const I = ISLE, r = (a, b) => a + Math.random() * (b - a);
+      const grove = (x, z) => 0.5 + 0.3 * Math.sin(x * 0.031 + 1.7) * Math.cos(z * 0.027 - 0.4) + 0.2 * Math.sin((x + z) * 0.053 + 0.9);
+      for (let gx = I.x0; gx <= I.x0 + I.nx * I.C; gx += 8) for (let gz = 640; gz <= I.z0 + I.nz * I.C; gz += 8) {
+        const x = gx + r(-3.5, 3.5), z = gz + r(-3.5, 3.5), u = isleU(x, z), g = grove(x, z);
+        if (u < 22 || neckU(x, z) >= u - 0.01 || Math.random() > g * g * 1.3) continue;
+        if (!treeOK(x, z, 0.8)) continue;
+        { const q = trackAt(x, z); if (q && Math.abs(q.l) < TRACK.HW + 10) continue; }
+        if (LOOPS.some(L => Math.hypot(x - L.B[0], z - L.B[2]) < 26)) continue;
+        const deep = g > 0.72 && Math.random() < 0.6, v = deep ? 3 + Math.floor(Math.random() * 3) : Math.floor(Math.random() * 3);
+        picks[v].push({ x, z, TH: deep ? r(14, 24) : r(7, 13) });
+      }
     }
     // every frame: island pieces show only near you; the buoys bob
     function updateIsle(dt) {
@@ -5317,6 +5340,7 @@ bool inVoid(vec3 p) {
         const big = f * (0.5 + 0.5 * tl), v = big > 0.45 || Math.random() < 0.5 ? 3 + Math.floor(Math.random() * 3) : Math.floor(Math.random() * 3);
         picks[v].push({ x, z, TH: (12 + 40 * big) * rnd(0.8, 1.2) });
       }
+      isleTreePicks(picks, treeOK);   // M Island's woods
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), upY = new THREE.Vector3(0, 1, 0);
       xTrees = XK.map((kit, v) => {
         const list = picks[v], im = new THREE.InstancedMesh(kit.geo, kit.mat, Math.max(1, list.length));
