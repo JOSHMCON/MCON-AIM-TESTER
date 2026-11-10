@@ -61,3 +61,5 @@ Everything lives in `index.html` (~4.3 MB, ~11k lines): HTML, CSS, one big scrip
 
 ## Deploy
 Commit `index.html` to the repo root (GitHub Pages, `.nojekyll` present). Pages updates in a minute or two.
+Before every push, bump the build label (search `id="buildVer"`, e.g. `v020 · Nov 9, 7:15 PM`): next version number, plus the
+local date and time of the push (`date "+%b %-d, %-I:%M %p"`). Josh uses it to tell which version is live.

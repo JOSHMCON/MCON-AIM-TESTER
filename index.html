@@ -321,7 +321,7 @@
         <button class="exit" id="exitBtn" aria-label="Exit curve editor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5 7 12l8.5 8.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <h1>Curve Editor</h1><span class="ver" id="buildVer">v019 · Nov 6, 4:08 PM</span>
+        <h1>Curve Editor</h1><span class="ver" id="buildVer">v020 · Nov 9, 7:01 PM</span>
       </div>
 
       <div class="card sliders">
@@ -4656,18 +4656,52 @@ function buildPriusModel(THREE, options) {
         title.userData.prop = pr; props.push(pr);
       }
 
+      // ---- gazebo on the bank: an octagonal deck on a skirt, eight posts with plinths, a beam round the top with
+      // braces, spindle railings on seven sides (the eighth opens toward the lake, with steps), benches at the back.
+      // Welded in with the cabin, so it costs no extra draw calls.
+      const gzx = 22, gzz = LAKE.z + 29, gy = heightAt(gzx, gzz);
+      { const ox = gzx - X, oy = gy - y0, oz = gzz - Z, P8 = Math.PI / 8, Rp = 2.35, A = Rp * Math.cos(P8), L = 2 * Rp * Math.sin(P8), DT = 0.4, BT = 2.75;
+        const G = (geo, x, y, z, ry, rx, rz, key, solid) => put(geo, TR(ox + x, oy + y, oz + z, ry, rx, rz), key, solid);
+        const tan = m => [Math.cos(m), -Math.sin(m)], rad = m => [Math.sin(m), Math.cos(m)];
+        const ent = ((Math.round(Math.atan2(LAKE.x - gzx, LAKE.z - gzz) / (Math.PI / 4)) % 8) + 8) % 8;   // the open side faces the lake
+        let lo = 0; for (let i = 0; i < 8; i++) { const a = P8 + i * Math.PI / 4; lo = Math.min(lo, heightAt(gzx + Math.sin(a) * 2.7, gzz + Math.cos(a) * 2.7) - gy); }
+        G(new THREE.CylinderGeometry(2.62, 2.62, DT - 0.08 - (lo - 0.3), 8), 0, (DT - 0.08 + lo - 0.3) / 2, 0, P8, 0, 0, 'woodDark', false);   // skirt down into the slope
+        G(new THREE.CylinderGeometry(2.75, 2.75, 0.08, 8), 0, DT - 0.04, 0, P8, 0, 0, 'floor', false);   // the boards
+        for (let i = 0; i < 8; i++) {
+          const pa = P8 + i * Math.PI / 4, m = i * Math.PI / 4, [rx, rz] = rad(m), [tx, tz] = tan(m);
+          G(new THREE.BoxGeometry(0.16, BT - DT, 0.16), Math.sin(pa) * Rp, (DT + BT) / 2, Math.cos(pa) * Rp, pa, 0, 0, 'trim', false);   // post
+          G(new THREE.BoxGeometry(0.26, 0.18, 0.26), Math.sin(pa) * Rp, DT + 0.09, Math.cos(pa) * Rp, pa, 0, 0, 'trim', false);   // plinth
+          solidCircles.push({ x: gzx + Math.sin(pa) * Rp, z: gzz + Math.cos(pa) * Rp, r: 0.1, top: gy + BT });
+          G(new THREE.BoxGeometry(L + 0.16, 0.2, 0.12), rx * A, BT - 0.1, rz * A, m, 0, 0, 'trim', false);   // beam round the top
+          for (const sg of [1, -1]) { const d = sg * (L / 2 - 0.08 - 0.17); G(new THREE.BoxGeometry(0.06, 0.48, 0.06), rx * A + tx * d, BT - 0.2 - 0.17, rz * A + tz * d, m, 0, sg * Math.PI / 4, 'trim', false); }   // braces
+          if (i === ent) {   // steps down to the grass
+            const er = 2.75 * Math.cos(P8), hg = heightAt(gzx + rx * (er + 0.5), gzz + rz * (er + 0.5)) - gy, drop = DT - hg, n = Math.max(1, Math.min(4, Math.round(drop / 0.2) - 1));
+            for (let k = 1; k <= n; k++) { const top = DT - k * drop / (n + 1), r0 = er + 0.15 + (k - 1) * 0.3, bot = hg - 0.25; G(new THREE.BoxGeometry(1.3, top - bot, 0.3), rx * r0, (top + bot) / 2, rz * r0, m, 0, 0, 'floor', false); }
+            continue;
+          }
+          const hl = L / 2 - 0.08;
+          G(new THREE.BoxGeometry(2 * hl, 0.07, 0.1), rx * A, DT + 0.95, rz * A, m, 0, 0, 'trim', true);   // top rail
+          G(new THREE.BoxGeometry(2 * hl, 0.06, 0.08), rx * A, DT + 0.13, rz * A, m, 0, 0, 'trim', true);   // bottom rail
+          const c = [ox + rx * A, oz + rz * A], q = (t, y) => [c[0] + tx * t, oy + y, c[1] + tz * t];
+          railQuad(q(-hl, DT + 0.16), q(hl, DT + 0.16), q(hl, DT + 0.915), q(-hl, DT + 0.915));   // spindles
+          if ((i - ent + 8) % 8 >= 3 && (i - ent + 8) % 8 <= 5) {   // benches along the back three sides
+            const br = A - 0.27; G(new THREE.BoxGeometry(L - 0.36, 0.05, 0.36), rx * br, DT + 0.43, rz * br, m, 0, 0, 'wood', false);
+            for (const sg of [1, -1]) { const d = sg * (L / 2 - 0.35); G(new THREE.BoxGeometry(0.05, 0.41, 0.3), rx * br + tx * d, DT + 0.2, rz * br + tz * d, m, 0, 0, 'woodDark', false); }
+          }
+        }
+        G(new THREE.CylinderGeometry(3.3, 3.3, 0.16, 8, 1, true), 0, BT + 0.08, 0, P8, 0, 0, 'trim', false);   // fascia under the roof's edge
+        G(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 6), 0, BT + 1.75, 0, 0, 0, 0, 'trim', false);   // finial stem
+      }
+
       // ---- weld everything into one mesh per material
       for (const k in R) { const B = R[k]; if (!B.P.length) continue; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.N, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(B.U, 2));
         const m = new THREE.Mesh(g, B.mat); m.userData.solidMesh = true; scene.add(m); if (k === 'glass' || k === 'glassLit' || k === 'emis' || k === 'emisCool' || k === 'rails') noShadow.push(m); }
 
-      // ---- gazebo on the bank
-      const gzx = 22, gzz = LAKE.z + 29, gy = heightAt(gzx, gzz), gp = new THREE.Group(); gp.position.set(gzx, gy, gzz); scene.add(gp);
-      const plat = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.7, 0.4, 8), boards); plat.position.y = 0.2; gp.add(plat);
-      for (let i = 0; i < 8; i++) { const a2 = i / 8 * Math.PI * 2 + Math.PI / 8, post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.4, 0.14), white); post.position.set(Math.sin(a2) * 2.35, 1.6, Math.cos(a2) * 2.35); gp.add(post);
-        if (i !== 0) { const rail = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.08), white); const a3 = a2 + Math.PI / 8; rail.position.set(Math.sin(a3) * 2.2, 1.2, Math.cos(a3) * 2.2); rail.rotation.y = a3 + Math.PI / 2; gp.add(rail); } }
-      const groof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.6, 8), metal); groof.position.y = 3.6; groof.rotation.y = Math.PI / 8; gp.add(groof);
-      const fin = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 4), white); fin.position.y = 4.5; gp.add(fin);
-      solidCircles.push({ x: gzx, z: gzz, r: 2.7, top: gy + 0.4, climb: true });
+      // the gazebo's roof stays its own mesh (the metal's ribs run down each face); seen from underneath too
+      { const gp = new THREE.Group(); gp.position.set(gzx, gy, gzz); scene.add(gp); const rm = metal.clone(); rm.side = THREE.DoubleSide;
+        const groof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.6, 8), rm); groof.position.y = 2.75 + 0.8; groof.rotation.y = Math.PI / 8; gp.add(groof);
+        const fin = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 4), white); fin.position.y = 2.75 + 2.0; gp.add(fin);
+        solidCircles.push({ x: gzx, z: gzz, r: 2.7, top: gy + 0.4, climb: true }); }
       // ---- little dock into the lake
       const lx = -12, lz0 = LAKE.z + 33, ltop = LAKE.y + 0.55;
       { const m = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 10), boards); m.position.set(lx, ltop - 0.09, lz0 - 5); scene.add(m); }
