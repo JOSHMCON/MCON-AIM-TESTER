@@ -1437,7 +1437,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     function isleH(x, z) {
       const u = isleU(x, z); if (u < -70) return -1e9;
       if (u < 0) return Math.max(SEA - 30, SEA + 0.35 + u * 0.13);
-      const top = neckU(x, z) >= u - 0.01 ? SEA + 1.8 : SEA + 1.5 + Math.max(0.5, isleHills(x, z));
+      const top = neckU(x, z) >= u - 0.01 ? SEA + 1.8 : SEA + 2.6 + 0.2 * isleHills(x, z);   // nearly flat: just a gentle roll
       return SEA + 0.35 + (top - SEA - 0.35) * smooth(0, 40, u);
     }
     // ---- the track: one closed lap (ramp, flight, the island, the water, back up the beach) plus the road down from the tunnel
@@ -1464,7 +1464,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const paths = [
         { pts: LAP, closed: true, F: [
           { at: [0, 545], kind: 'kicker', H: 20, Lt: 55, Lb: 12 },                                 // the big ramp: 20 m tall, lip about 36 degrees
-          { at: [0, 658], kind: 'landing', H: 19, Lu: 12, Ld: 27, steep: true },                   // its landing: a straight 40-degree face matched to the fall
+          { at: [0, 648], kind: 'landing', H: 26.5, Lu: 16, Ld: 38, c: 0.0085, e0: 23 },            // its landing: a curved face fitted ~3 m under the car's measured fall
           { at: ISK(392, 360), kind: 'kicker', H: 4, Lt: 18, Lb: 4 },                              // the gap jump...
           { after: 52, kind: 'landing', H: 4, Lu: 8, Ld: 50 }],                                    // ...and its landing
           LOOP: [ISK(527, 362)] },
@@ -1475,9 +1475,8 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
         if (f.kind === 'kicker') { if (d < f.Lt) return f.H * Math.pow(d / f.Lt, 2); if (d < f.Lt + f.Lb) return f.H * 0.5 * (1 + Math.cos(Math.PI * (d - f.Lt) / f.Lb)); return 0; }
         if (f.kind === 'landing') {
           if (d < f.Lu) return f.H * 0.5 * (1 - Math.cos(Math.PI * d / f.Lu)); const e = d - f.Lu; if (e >= f.Ld) return 0;
-          if (!f.steep) return f.H * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld));
-          const R = 4, k = f.H / (f.Ld - R);   // straight down at slope k, rounded off over 4 m at the top and the bottom
-          return e < R ? f.H - k * e * e / (2 * R) : e > f.Ld - R ? k * (f.Ld - e) * (f.Ld - e) / (2 * R) : f.H - k * (e - R / 2);
+          if (f.c) return Math.max(0, f.H - f.c * e * (e + 2 * f.e0));   // a parabola parallel to the flight path, so you touch down along it
+          return f.H * 0.5 * (1 + Math.cos(Math.PI * e / f.Ld));
         }
         return 0;
       };
@@ -1518,7 +1517,21 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const hash = new Map(), key = (cx, cz) => cx * 100003 + cz;
       for (let i = 0; i < X.length; i++) { const k = key(Math.floor(X[i] / 10), Math.floor(Z[i] / 10)); let a = hash.get(k); if (!a) hash.set(k, a = []); a.push(i); }
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (let i = 0; i < X.length; i++) { x0 = Math.min(x0, X[i]); x1 = Math.max(x1, X[i]); z0 = Math.min(z0, Z[i]); z1 = Math.max(z1, Z[i]); }
-      return { paths, X, Z, TX, TZ, KS, PI, SI, KD: Int8Array.from(KD), prof, hash, key, HW: 7.5, SH: 4, BERM: 4.5, box: { x0: x0 - 40, x1: x1 + 40, z0: z0 - 40, z1: z1 + 40 } };
+      return { paths, X, Z, TX, TZ, KS, PI, SI, KD: Int8Array.from(KD), prof, hash, key, HW: 7.5, SH: 4, BERM: 0, box: { x0: x0 - 40, x1: x1 + 40, z0: z0 - 40, z1: z1 + 40 } };
+    })();
+    // keep the shore and the lake back from the dirt: on the island the ground reaches at least 20 m either side of the
+    // track (not at the big jump's landing, where the water gap is meant to be)
+    (() => {
+      const I = ISLE, T = TRACK, R = 26;
+      for (let i = 0; i < T.X.length; i += 2) {
+        if (T.KD[i] !== 0 || T.Z[i] < 700) continue;
+        const ci = Math.round((T.X[i] - I.x0) / I.C), cj = Math.round((T.Z[i] - I.z0) / I.C), n = Math.ceil(R / I.C);
+        for (let b = -n; b <= n; b++) for (let a = -n; a <= n; a++) {
+          const ii = ci + a, jj = cj + b; if (ii < 0 || jj < 0 || ii > I.nx || jj > I.nz) continue;
+          const k = ii + I.n1 * jj, d = Math.hypot(I.x0 + ii * I.C - T.X[i], I.z0 + jj * I.C - T.Z[i]);
+          if (d < R) I.U[k] = Math.max(I.U[k], 20 - d);
+        }
+      }
     })();
     // where (x, z) is relative to the nearest dirt track: s along it, l to the side (+ = left of travel), or null if far
     // away (or if the nearest bit of the lap is in the air or out on the water)
@@ -1544,7 +1557,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const across = a <= T.HW ? 1 : a >= T.HW + sh ? 0 : smooth(T.HW + sh, T.HW, a);
       let h = along * across;
       const k = T.KS[q.i], bank = clamp((Math.abs(k) - 1 / 130) * 90, 0, 1);
-      if (bank > 0) {   // berms: the whole track tilts up toward the outside of the corner, with a tall lip to rail against
+      if (bank > 0 && T.BERM > 0) {   // berms (off: BERM 0): the whole track tilts up toward the outside of the corner, with a tall lip
         const o = Math.sign(k) * -q.l, top = T.BERM * bank;
         const up = top * Math.pow(smooth(-T.HW, T.HW + 2, o), 1.4);
         h += o <= T.HW + 2 ? up : o < T.HW + 9 ? up * smooth(T.HW + 9, T.HW + 2, o) : 0;
@@ -3309,7 +3322,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
       const NC = 10, cols = 2 * NC + 1;
       T.paths.forEach((pa, pid) => {
         const N = pa.N, pr = T.prof[pid], land = k => T.KD[pa.base + k] === 0;
-        const alongAt = k => pr[Math.max(0, k) * 4] || 0, bankAt = k => clamp((Math.abs(T.KS[pa.base + k]) - 1 / 130) * 90, 0, 1);
+        const alongAt = k => pr[Math.max(0, k) * 4] || 0, bankAt = k => T.BERM ? clamp((Math.abs(T.KS[pa.base + k]) - 1 / 130) * 90, 0, 1) : 0;
         let start = 0; if (pa.closed) { while (start < N && land(start)) start++; if (start >= N) start = 0; }
         let rows = [];
         const flush = () => {
@@ -3584,7 +3597,7 @@ float stick_curve_right(float in) { return lut_curve(CURVE_LUT_RIGHT, in); }`;
     function forestUpdate(dt) {
       if (!FOG0 || !cam) return;
       const p = cam.position, g = heightAt(p.x, p.z), tgt = forestAt(p.x, p.z) * (1 - smooth(30, 80, p.y - g)) * (1 - smooth(85, 115, g));
-      FOREST += (tgt - FOREST) * Math.min(1, dt * 0.8);
+      FOREST += (tgt - FOREST) * Math.min(1, dt * 0.8); if (!(FOREST >= 0)) FOREST = 0;   // (never let a bad frame leave it NaN: that blacks out the world)
       scene.fog.near = FOG0.n + (2 - FOG0.n) * FOREST; scene.fog.far = FOG0.f + (125 - FOG0.f) * FOREST;
       if (!SN) scene.fog.color.copy(FOG0.c).lerp(FOREST_FOG, FOREST * 0.8);   // (the end-of-the-world sequence owns the colour while it plays)
     }
@@ -5252,7 +5265,7 @@ bool inVoid(vec3 p) {
       renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
       renderer.setPixelRatio(pr);
       scene = new THREE.Scene();
-      scene.fog = new THREE.Fog(0xe9d2bd, 28, 330);   // soft early-morning fog
+      scene.fog = new THREE.Fog(0xe9d2bd, 120, 1100);   // light early-morning haze
       cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.12, 3000);
       cam.rotation.order = 'YXZ';
 
